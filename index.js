@@ -31,7 +31,7 @@ const TARIFS = {
     "Lingot d'or": 16000, "Mant précieux": 75000, "Montre gousset": 1250,
     "Montre en or": 1850, "Collier perle": 2500, "Collier saphir": 55500,
     "Cigarette contrebande": 400, "Alcool contrebande": 400,
-    "Weed": 300 // PRIX FIXÉ À 300$
+    "Weed": 100 // VALEUR MODIFIÉE : 1 TÊTE = 100$
 };
 
 // --- BOUTONS ---
@@ -126,13 +126,12 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ McKane Système prêt (Weed = 300$)');
+        console.log('✅ Système McKane prêt (Weed = 100$)');
     } catch (e) { console.error(e); }
 })();
 
 client.on('interactionCreate', async interaction => {
     
-    // --- SLASH COMMANDS ---
     if (interaction.isChatInputCommand()) {
         const isHautGrade = interaction.member.roles.cache.has(ROLE_HAUT_GRADE_ID);
 
@@ -167,11 +166,9 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- BUTTONS ---
     if (interaction.isButton()) {
         const cid = interaction.channel.id;
 
-        // PAIES
         if (interaction.customId === 'btn_paie') {
             const now = new Date();
             if (now.getDay() !== 0 || now.getHours() < 18) {
@@ -179,11 +176,15 @@ client.on('interactionCreate', async interaction => {
             }
             const data = comptes[cid];
             if (!data) return interaction.reply({ content: "Données introuvables.", ephemeral: true });
-            const total = data.atm.argent + data.superette.argent + data.drogue.details.reduce((s,i)=>s+i.argent,0) + data.gofast.argent + data.conteneur.details.reduce((s,i)=>s+(TARIFS[i.nom]*i.qty),0) + (data.weed.quantite * 300);
+            
+            let argentConteneur = data.conteneur.details.reduce((s,i)=>s+(TARIFS[i.nom]*i.qty),0);
+            let argentVente = data.drogue.details.reduce((s,i)=>s+i.argent,0);
+            let argentWeed = data.weed.quantite * 100;
+            const total = data.atm.argent + data.superette.argent + argentVente + data.gofast.argent + argentConteneur + argentWeed;
+            
             return interaction.reply({ embeds: [new EmbedBuilder().setTitle("💸 BILAN DES PAIES").setColor("#e74c3c").setDescription(`**Session : ${data.nom_orga}**\n\n💰 Total : **${total}$**\n💵 **PAIES MEMBRES (30%) : ${Math.floor(total * 0.30)}$**`)] });
         }
 
-        // TICKETS
         if (interaction.customId === 'btn_ticket_init') {
             const m = new ModalBuilder().setCustomId('modal_ticket_open').setTitle('Ticket');
             m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rp').setLabel('Nom Prénom RP').setStyle(TextInputStyle.Short).setRequired(true)));
@@ -207,14 +208,12 @@ client.on('interactionCreate', async interaction => {
             return interaction.channel.delete();
         }
 
-        // ABSENCES
         if (interaction.customId === 'btn_open_abs') {
             const m = new ModalBuilder().setCustomId('modal_abs_submit').setTitle('Absence');
             m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('n').setLabel('Nom RP').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Dates').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('m').setLabel('Motif').setStyle(TextInputStyle.Paragraph).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('j').setLabel('Joignable ?').setStyle(TextInputStyle.Short).setRequired(true)));
             return await interaction.showModal(m);
         }
 
-        // COMPTA MODALS
         if (interaction.customId.startsWith('btn_')) {
             const cat = interaction.customId.replace('btn_', '');
             if (!comptes[cid]) return;
@@ -232,7 +231,6 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- MODALS SUBMIT ---
     if (interaction.isModalSubmit()) {
         const cid = interaction.channel.id;
 
