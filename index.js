@@ -88,7 +88,7 @@ client.on('interactionCreate', async interaction => {
             }
 
             const embedAbs = new EmbedBuilder()
-                .setTitle("🩸 Cartel McKane – Formulaire d’Absence")
+                .setTitle("🩸 Mafia McKane – Formulaire d’Absence")
                 .setDescription("Toute absence non déclarée entraînera des sanctions.\n\nCliquez sur le bouton ci-dessous pour déclarer votre absence.")
                 .setColor("#8b0000")
                 .setThumbnail("https://i.imgur.com/8Q9S8Xm.png"); // Optionnel: logo cartel
