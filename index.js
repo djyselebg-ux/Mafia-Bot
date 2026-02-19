@@ -18,113 +18,84 @@ const client = new Client({
 
 const comptes = {};
 
-// --- BLOC D'ENREGISTREMENT DES COMMANDES ---
-const commands = [
-    {
-        name: 'compta',
-        description: 'Créer la fiche comptable'
-    }
-];
-
+// --- ENREGISTREMENT DES COMMANDES ---
+const commands = [{ name: 'compta', description: 'Créer la fiche comptable complète' }];
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
     try {
-        console.log('🔄 Mise à jour des commandes Slash...');
-        await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID),
-            { body: commands },
-        );
+        await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
         console.log('✅ Commandes Slash enregistrées !');
     } catch (error) {
-        console.error('❌ Erreur lors de l’enregistrement des commandes :', error);
+        console.error(error);
     }
 })();
-// ------------------------------------------
 
-client.once('ready', () => {
-    console.log('Bot en ligne 😈');
-});
+// --- FONCTION POUR GÉNÉRER L'EMBED ---
+function generateEmbed(channelId, channelName) {
+    const data = comptes[channelId];
+    return new EmbedBuilder()
+        .setTitle(`💼 COMPTABILITÉ - ${channelName}`)
+        .setColor('#2ecc71')
+        .setDescription(`
+🏧 **ATM**
+💰 Argent Total : ${data.atm.argent}$
+1️⃣ Nombre Total : ${data.atm.nombre}
+
+🏪 **Supérette**
+💵 Argent Total : ${data.superette.argent}$
+1️⃣ Nombre Total : ${data.superette.nombre}
+
+📦 **Conteneur**
+💼 Objets obtenus : ${data.conteneur.objets}
+1️⃣ Nombre Total : ${data.conteneur.nombre}
+
+💸 **Vente Drogue**
+🌿 Nom : ${data.drogue.nom}
+⚖️ Quantité : ${data.drogue.quantite}
+💰 Argent Total : ${data.drogue.argent}$
+
+🚗 **Go Fast**
+🎫 Total Briques : ${data.gofast.briques}
+💵 Argent Total : ${data.gofast.argent}$
+
+🌿 **Têtes de Weed**
+🌿 Quantité récoltée : ${data.weed.quantite}
+        `);
+}
 
 client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === 'compta') {
-            comptes[interaction.channel.id] = {
-                atm: { argent: 0, nombre: 0 }
-            };
+    if (interaction.isChatInputCommand() && interaction.commandName === 'compta') {
+        comptes[interaction.channel.id] = {
+            atm: { argent: 0, nombre: 0 },
+            superette: { argent: 0, nombre: 0 },
+            conteneur: { objets: 0, nombre: 0 },
+            drogue: { nom: "Aucun", quantite: 0, argent: 0 },
+            gofast: { briques: 0, argent: 0 },
+            weed: { quantite: 0 }
+        };
 
-            const embed = new EmbedBuilder()
-                .setTitle(`💼 COMPTABILITÉ - ${interaction.channel.name}`)
-                .setColor('#2ecc71')
-                .setDescription(`
-💰 **ATM**
-💵 **Argent Total :** 0$
-🔢 **Nombre Total :** 0
-                `);
+        const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_atm').setLabel('🏧 ATM').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('btn_superette').setLabel('🏪 Supérette').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('btn_conteneur').setLabel('📦 Conteneur').setStyle(ButtonStyle.Primary)
+        );
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_drogue').setLabel('💸 Vente').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('btn_gofast').setLabel('🚗 Go Fast').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('btn_weed').setLabel('🌿 Weed').setStyle(ButtonStyle.Success)
+        );
 
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('atm')
-                        .setLabel('💳 ATM')
-                        .setStyle(ButtonStyle.Primary)
-                );
-
-            await interaction.reply({
-                embeds: [embed],
-                components: [row]
-            });
-        }
+        await interaction.reply({ embeds: [generateEmbed(interaction.channel.id, interaction.channel.name)], components: [row1, row2] });
     }
 
+    // --- GESTION DES BOUTONS (Ouverture des Modals) ---
     if (interaction.isButton()) {
-        if (interaction.customId === 'atm') {
-            const modal = new ModalBuilder()
-                .setCustomId('modal_atm')
-                .setTitle('Ajout ATM');
+        const category = interaction.customId.replace('btn_', '');
+        const modal = new ModalBuilder().setCustomId(`modal_${category}`).setTitle(`Ajout ${category}`);
 
-            const montantInput = new TextInputBuilder()
-                .setCustomId('montant')
-                .setLabel('Montant déposé')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Exemple: 5000')
-                .setRequired(true);
-
-            const row = new ActionRowBuilder().addComponents(montantInput);
-            modal.addComponents(row);
-
-            await interaction.showModal(modal);
-        }
-    }
-
-    if (interaction.isModalSubmit()) {
-        const montantStr = interaction.fields.getTextInputValue('montant');
-        const montant = parseInt(montantStr);
-
-        if (isNaN(montant)) {
-            return interaction.reply({ content: "Veuillez entrer un nombre valide !", ephemeral: true });
-        }
-
-        if (!comptes[interaction.channel.id]) {
-            comptes[interaction.channel.id] = { atm: { argent: 0, nombre: 0 } };
-        }
-
-        comptes[interaction.channel.id].atm.argent += montant;
-        comptes[interaction.channel.id].atm.nombre += 1;
-
-        const embed = new EmbedBuilder()
-            .setTitle(`💼 COMPTABILITÉ - ${interaction.channel.name}`)
-            .setColor('#2ecc71')
-            .setDescription(`
-💰 **ATM**
-💵 **Argent Total :** ${comptes[interaction.channel.id].atm.argent}$
-🔢 **Nombre Total :** ${comptes[interaction.channel.id].atm.nombre}
-            `);
-
-        await interaction.update({
-            embeds: [embed]
-        });
-    }
-});
-
-client.login(process.env.TOKEN);
+        if (category === 'drogue') {
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Nom de la drogue').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('quantite').setLabel('Quantité').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().
