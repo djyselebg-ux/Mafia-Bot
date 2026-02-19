@@ -8,7 +8,18 @@ const commands = [
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-rest.put(
-    Routes.applicationCommands(process.env.CLIENT_ID),
-    { body: commands }
-);
+// On utilise uniquement le bloc async/await pour plus de sécurité
+(async () => {
+    try {
+        console.log('Début de l’enregistrement des commandes...');
+        
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: commands }
+        );
+        
+        console.log('Commandes enregistrées avec succès !');
+    } catch (error) {
+        console.error('Erreur lors du déploiement :', error);
+    }
+})();
