@@ -18,6 +18,7 @@ const client = new Client({
 
 // --- CONFIGURATION ---
 const ROLE_COMPTA_ID = "1473990774579265590";
+const ROLE_HAUT_GRADE_ID = "1473815853181960262"; // ID Haut Gradé
 const comptes = {};
 
 // --- DICTIONNAIRE DES TARIFS ---
@@ -36,22 +37,28 @@ const TARIFS = {
     "Alcool contrebande": 400
 };
 
-// --- ENREGISTREMENT DE LA COMMANDE ---
-const commands = [{
-    name: 'panel',
-    description: 'Ouvrir le panel de comptabilité',
-    options: [{ name: 'nom', description: 'Nom de l\'organisation', type: 3, required: false }]
-}];
+// --- ENREGISTREMENT DES COMMANDES ---
+const commands = [
+    {
+        name: 'panel',
+        description: 'Ouvrir le panel de comptabilité',
+        options: [{ name: 'nom', description: 'Nom de l\'organisation', type: 3, required: false }]
+    },
+    {
+        name: 'annonce',
+        description: 'Faire une annonce officielle via le bot'
+    }
+];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ Commande /panel enregistrée');
+        console.log('✅ Commandes /panel et /annonce enregistrées');
     } catch (e) { console.error(e); }
 })();
 
-// --- FONCTION DE RECONNAISSANCE INTELLIGENTE ---
+// --- LOGIQUE DE RECONNAISSANCE ---
 function trouverObjet(input) {
     const raw = input.trim().toLowerCase();
     return Object.keys(TARIFS).find(key => {
@@ -60,11 +67,9 @@ function trouverObjet(input) {
     });
 }
 
-// --- FONCTION DE GÉNÉRATION DE L'EMBED ---
+// --- GÉNÉRATION EMBED PANEL ---
 function generateEmbed(channelId) {
     const data = comptes[channelId];
-    
-    // Calcul Conteneurs
     let argentConteneurTotal = 0;
     let listeObjets = "Aucun objet enregistré";
     if (data.conteneur.details.length > 0) {
@@ -76,14 +81,13 @@ function generateEmbed(channelId) {
         listeObjets = Object.entries(inv).map(([nom, qty]) => `🔹 **${nom}** ×${qty}`).join('\n');
     }
 
-    // Calcul Vente
     let argentVenteTotal = 0;
     let listeVentes = "Aucune vente enregistrée";
     if (data.drogue.details.length > 0) {
         const invV = {};
         data.drogue.details.forEach(i => {
             invV[i.nom] = (invV[i.nom] || 0) + i.qty;
-            argentVenteTotal += i.argent; // Somme directe de l'argent saisi
+            argentVenteTotal += i.argent;
         });
         listeVentes = Object.entries(invV).map(([nom, qty]) => `🌿 **${nom}** : ${qty} unité(s)`).join('\n');
     }
@@ -124,6 +128,7 @@ ${listeVentes}
 }
 
 client.on('interactionCreate', async interaction => {
+    // --- COMMANDE /PANEL ---
     if (interaction.isChatInputCommand() && interaction.commandName === 'panel') {
         if (!interaction.member.roles.cache.has(ROLE_COMPTA_ID)) return interaction.reply({ content: "❌ Accès refusé.", ephemeral: true });
 
@@ -132,7 +137,7 @@ client.on('interactionCreate', async interaction => {
             atm: { argent: 0, nombre: 0 },
             superette: { argent: 0, nombre: 0 },
             conteneur: { details: [], nombre: 0 },
-            drogue: { details: [] }, // Changé pour système de liste
+            drogue: { details: [] },
             gofast: { briques: 0, argent: 0 },
             weed: { quantite: 0 }
         };
@@ -151,10 +156,29 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [generateEmbed(interaction.channel.id)], components: [row1, row2] });
     }
 
+    // --- COMMANDE /ANNONCE ---
+    if (interaction.isChatInputCommand() && interaction.commandName === 'annonce') {
+        if (!interaction.member.roles.cache.has(ROLE_HAUT_GRADE_ID)) {
+            return interaction.reply({ content: "❌ Seuls les **Hauts Gradés** peuvent faire une annonce.", ephemeral: true });
+        }
+
+        const modal = new ModalBuilder().setCustomId('modal_annonce').setTitle('📢 Créer une Annonce');
+        const textInput = new TextInputBuilder()
+            .setCustomId('annonce_texte')
+            .setLabel('Texte de l\'annonce')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Écrivez votre annonce ici...')
+            .setRequired(true);
+
+        modal.addComponents(new ActionRowBuilder().addComponents(textInput));
+        await interaction.showModal(modal);
+    }
+
+    // --- GESTION DES BOUTONS ---
     if (interaction.isButton()) {
         const cat = interaction.customId.replace('btn_', '');
         const modal = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Ajout ${cat}`);
-
+        
         if (cat === 'conteneur') {
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Quel objet ?').setStyle(TextInputStyle.Short).setRequired(true)),
@@ -180,14 +204,25 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
+    // --- RECEPTION DES MODALS ---
     if (interaction.isModalSubmit()) {
         const cid = interaction.channel.id;
+
+        // Cas de l'Annonce
+        if (interaction.customId === 'modal_annonce') {
+            const texte = interaction.fields.getTextInputValue('annonce_texte');
+            // Réponse invisible pour confirmer
+            await interaction.reply({ content: "✅ Annonce envoyée !", ephemeral: true });
+            // Envoi de l'annonce réelle sans mention de l'utilisateur
+            return interaction.channel.send({ content: texte });
+        }
+
+        // Cas du Panel
         if (!comptes[cid]) return;
 
         if (interaction.customId === 'modal_conteneur') {
             const nomTrouve = trouverObjet(interaction.fields.getTextInputValue('nom'));
-            if (!nomTrouve) return interaction.reply({ content: "❌ Objet non reconnu (Saphir, Mant précieux...)", ephemeral: true });
-
+            if (!nomTrouve) return interaction.reply({ content: "❌ Objet non reconnu.", ephemeral: true });
             const q = parseInt(interaction.fields.getTextInputValue('qty')) || 0;
             const nb = parseInt(interaction.fields.getTextInputValue('nb_cont')) || 0;
             comptes[cid].conteneur.details.push({ nom: nomTrouve, qty: q });
