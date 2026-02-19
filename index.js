@@ -124,13 +124,45 @@ client.on('interactionCreate', async interaction => {
 
     // --- 2. BOUTONS ---
     if (interaction.isButton()) {
-        // Tickets
+        
+        // Modal Ouverture Ticket
         if (interaction.customId === 'btn_ticket_init') {
             const m = new ModalBuilder().setCustomId('modal_ticket_open').setTitle('Ouverture de Ticket');
             m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rp').setLabel('Nom et Prénom RP').setStyle(TextInputStyle.Short).setRequired(true)));
             return await interaction.showModal(m);
         }
 
+        // Action Recrutement (Affiche le formulaire)
+        if (interaction.customId === 'btn_ticket_recrutement') {
+            const formText = `▬▬▬▬▬▬▬ 📝 INFORMATIONS HRP ▬▬▬▬▬▬▬
+• Âge :
+• Disponibilités (Heures/Jours) :
+• Expérience en serveur RP (Années/Serveurs) :
+
+▬▬▬▬▬▬▬ 🎭 INFORMATIONS RP ▬▬▬▬▬▬▬
+• Nom & Prénom :
+• Âge :
+• Nationalité :
+• Ancienneté en ville :
+• Vos anciennes appartenances (Gangs/Orgas) :
+- Carte d'identitée :
+
+▬▬▬▬▬▬▬ 🧠 VOS MOTIVATIONS ▬▬▬▬▬▬▬
+• Pourquoi vouloir rejoindre la Mafia McKane ?
+• Quelles sont vos spécialités ? (Tireur, Pilote, Farmeur...)
+• Que pouvez-vous apporter à la Familia ?
+• Êtes-vous prêt à accepter nos quotas et notre discipline ?
+
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬`;
+
+            await interaction.reply({ 
+                content: "Veuillez copier et remplir ce formulaire ci-dessous pour votre candidature :", 
+                ephemeral: false 
+            });
+            return interaction.channel.send(`\`\`\`${formText}\`\`\``);
+        }
+
+        // Fermeture Ticket
         if (interaction.customId === 'btn_close_ticket') {
             await interaction.channel.setParent(CAT_TICKET_FERME);
             await interaction.channel.permissionOverwrites.edit(interaction.guild.id, { ViewChannel: false });
@@ -138,6 +170,7 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: "🔒 Ticket archivé.", components: [rowDel] });
         }
 
+        // Suppression Ticket
         if (interaction.customId === 'btn_delete_ticket') {
             if (!interaction.member.roles.cache.has(ROLE_HAUT_GRADE_ID)) return interaction.reply({ content: "❌ Réservé aux chefs.", ephemeral: true });
             await interaction.reply({ content: "🗑️ Suppression..." });
@@ -158,20 +191,23 @@ client.on('interactionCreate', async interaction => {
 
         // Compta
         const cat = interaction.customId.replace('btn_', '');
-        if (!comptes[interaction.channel.id]) return;
-        const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Ajout ${cat}`);
-        if (cat === 'conteneur') {
-            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Objet').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Qty').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nb').setLabel('Nb Conteneurs').setStyle(TextInputStyle.Short).setValue("1")));
-        } else if (cat === 'drogue') {
-            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Nom').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Qty').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Argent').setStyle(TextInputStyle.Short)));
-        } else {
-            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant').setStyle(TextInputStyle.Short)));
+        if (comptes[interaction.channel.id]) {
+            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Ajout ${cat}`);
+            if (cat === 'conteneur') {
+                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Objet').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Qty').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nb').setLabel('Nb Conteneurs').setStyle(TextInputStyle.Short).setValue("1")));
+            } else if (cat === 'drogue') {
+                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Nom').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Qty').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Argent').setStyle(TextInputStyle.Short)));
+            } else {
+                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant').setStyle(TextInputStyle.Short)));
+            }
+            await interaction.showModal(m);
         }
-        await interaction.showModal(m);
     }
 
     // --- 3. MODALS ---
     if (interaction.isModalSubmit()) {
+        
+        // Submit Ouverture Ticket
         if (interaction.customId === 'modal_ticket_open') {
             const rp = interaction.fields.getTextInputValue('rp');
             const ch = await interaction.guild.channels.create({
@@ -183,12 +219,22 @@ client.on('interactionCreate', async interaction => {
                     { id: ROLE_HAUT_GRADE_ID, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
                 ]
             });
-            const embed = new EmbedBuilder().setTitle("📩 𝕟𝕠𝕦𝕧𝕖𝕒𝕦 𝕥𝕚𝕔𝕜𝕖𝕥").setColor("#2ecc71").setDescription(`Bienvenue **${rp}**. Expliquez votre demande.`);
-            const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fermer').setStyle(ButtonStyle.Danger));
-            await ch.send({ content: `<@&${ROLE_HAUT_GRADE_ID}>`, embeds: [embed], components: [btn] });
+
+            const embedInit = new EmbedBuilder()
+                .setTitle("📩 𝕟𝕠𝕦𝕧𝕖𝕒𝕦 𝕥𝕚𝕔𝕜𝕖𝕥")
+                .setColor("#2ecc71")
+                .setDescription(`Bienvenue **${rp}**. Un Haut Gradé va s'occuper de vous.\n\nS'il s'agit d'un recrutement, cliquez sur le bouton ci-dessous.`);
+
+            const rowActions = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('btn_ticket_recrutement').setLabel('Recrutement').setStyle(ButtonStyle.Success).setEmoji('📝'),
+                new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fermer').setStyle(ButtonStyle.Danger)
+            );
+
+            await ch.send({ content: `<@&${ROLE_HAUT_GRADE_ID}>`, embeds: [embedInit], components: [rowActions] });
             return interaction.reply({ content: `✅ Ticket ouvert : ${ch}`, ephemeral: true });
         }
 
+        // Autres Modals (Annonce, Absences, Compta)
         if (interaction.customId === 'modal_annonce') {
             await interaction.reply({ content: "✅ Envoyée.", ephemeral: true });
             return interaction.channel.send({ content: interaction.fields.getTextInputValue('txt') });
