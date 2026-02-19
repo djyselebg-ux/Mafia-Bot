@@ -16,21 +16,21 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
+// --- CONFIGURATION ---
+const ROLE_COMPTA_ID = "1473990774579265590";
 const comptes = {};
 
-// --- ENREGISTREMENT DE LA COMMANDE AVEC OPTION DE NOM ---
+// --- ENREGISTREMENT DE LA COMMANDE /PANEL ---
 const commands = [
     {
-        name: 'compta',
-        description: 'Lancer la fiche comptable',
-        options: [
-            {
-                name: 'nom',
-                description: 'Le nom de votre organisation (ex: Mafia Sud, Cartel...)',
-                type: 3, // String
-                required: false
-            }
-        ]
+        name: 'panel',
+        description: 'Ouvrir le panel de comptabilité',
+        options: [{
+            name: 'nom',
+            description: 'Nom de l\'organisation',
+            type: 3,
+            required: false
+        }]
     }
 ];
 
@@ -39,56 +39,81 @@ const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ Commande chargée !');
+        console.log('✅ Commande /panel enregistrée !');
     } catch (error) {
-        console.error(error);
+        console.error('❌ Erreur déploiement commande:', error);
     }
 })();
 
 // --- FONCTION DE GÉNÉRATION DE L'EMBED ---
 function generateEmbed(channelId) {
     const data = comptes[channelId];
+    
+    // Calcul de l'argent total (ATM + Supérette + Vente Drogue + Go Fast)
+    const totalArgent = (data.atm.argent || 0) + (data.superette.argent || 0) + (data.drogue.argent || 0) + (data.gofast.argent || 0);
+
+    // Système de tri et d'addition pour les objets des conteneurs
+    let listeObjets = "Aucun objet";
+    if (data.conteneur.details.length > 0) {
+        const inventaire = {};
+        data.conteneur.details.forEach(item => {
+            const nom = item.nom.charAt(0).toUpperCase() + item.nom.slice(1).toLowerCase();
+            inventaire[nom] = (inventaire[nom] || 0) + item.qty;
+        });
+        listeObjets = Object.entries(inventaire)
+            .map(([nom, qty]) => `${nom} = ${qty}`)
+            .join('\n');
+    }
+
     return new EmbedBuilder()
-        .setTitle(`💼 ${data.nom_orga.toUpperCase()}`) // Utilise le nom choisi
+        .setTitle(`💼 ${data.nom_orga.toUpperCase()}`)
         .setColor('#2ecc71')
         .setDescription(`
 🏧 **ATM**
-💰 Argent Total : ${data.atm.argent}$
-1️⃣ Nombre Total : ${data.atm.nombre}
+💰 Argent : ${data.atm.argent}$ | 🔢 Nombre : ${data.atm.nombre}
 
 🏪 **Supérette**
-💵 Argent Total : ${data.superette.argent}$
-1️⃣ Nombre Total : ${data.superette.nombre}
+💵 Argent : ${data.superette.argent}$ | 🔢 Nombre : ${data.superette.nombre}
 
 📦 **Conteneur**
-💼 Objets obtenus : ${data.conteneur.objets}
-1️⃣ Nombre Total : ${data.conteneur.nombre}
+💼 **Objets obtenus :**
+${listeObjets}
+1️⃣ Total Conteneurs : ${data.conteneur.nombre}
 
 💸 **Vente Drogue**
-🌿 Nom : ${data.drogue.nom}
-⚖️ Quantité : ${data.drogue.quantite}
-💰 Argent Total : ${data.drogue.argent}$
+🌿 Nom : ${data.drogue.nom} | ⚖️ Qté : ${data.drogue.quantite}
+💰 Argent : ${data.drogue.argent}$
 
 🚗 **Go Fast**
-🎫 Total Briques : ${data.gofast.briques}
-💵 Argent Total : ${data.gofast.argent}$
+🎫 Briques : ${data.gofast.briques} | 💵 Argent : ${data.gofast.argent}$
 
 🌿 **Têtes de Weed**
 🌿 Quantité récoltée : ${data.weed.quantite}
+
+---
+💵 **ARGENT TOTAL GÉNÉRÉ : ${totalArgent}$**
         `);
 }
 
+client.once('ready', () => {
+    console.log('Bot en ligne 😈');
+});
+
 client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand() && interaction.commandName === 'compta') {
-        
-        // On récupère le nom choisi, sinon on met "Comptabilité" par défaut
-        const nomChoisi = interaction.options.getString('nom') || `COMPTABILITÉ - ${interaction.channel.name}`;
+    
+    // 1. COMMANDE /PANEL (Restriction Rôle)
+    if (interaction.isChatInputCommand() && interaction.commandName === 'panel') {
+        if (!interaction.member.roles.cache.has(ROLE_COMPTA_ID)) {
+            return interaction.reply({ content: "❌ Accès refusé : Seul le rôle **Comptabilité** peut faire ça.", ephemeral: true });
+        }
+
+        const nomOrga = interaction.options.getString('nom') || "COMPTABILITÉ";
 
         comptes[interaction.channel.id] = {
-            nom_orga: nomChoisi, // On enregistre le nom ici
+            nom_orga: nomOrga,
             atm: { argent: 0, nombre: 0 },
             superette: { argent: 0, nombre: 0 },
-            conteneur: { objets: 0, nombre: 0 },
+            conteneur: { details: [], nombre: 0 },
             drogue: { nom: "Aucun", quantite: 0, argent: 0 },
             gofast: { briques: 0, argent: 0 },
             weed: { quantite: 0 }
@@ -105,35 +130,33 @@ client.on('interactionCreate', async interaction => {
             new ButtonBuilder().setCustomId('btn_weed').setLabel('🌿 Weed').setStyle(ButtonStyle.Success)
         );
 
-        await interaction.reply({ 
-            embeds: [generateEmbed(interaction.channel.id)], 
-            components: [row1, row2] 
-        });
+        await interaction.reply({ embeds: [generateEmbed(interaction.channel.id)], components: [row1, row2] });
     }
 
-    // --- LOGIQUE DES BOUTONS ---
+    // 2. BOUTONS (Ouverture Modals)
     if (interaction.isButton()) {
-        const category = interaction.customId.replace('btn_', '');
-        const modal = new ModalBuilder().setCustomId(`modal_${category}`).setTitle(`Ajout ${category}`);
+        const cat = interaction.customId.replace('btn_', '');
+        const modal = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Ajout ${cat.toUpperCase()}`);
 
-        if (category === 'drogue') {
+        if (cat === 'conteneur') {
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Quel objet ?').setStyle(TextInputStyle.Short).setRequired(true)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité ?').setStyle(TextInputStyle.Short).setRequired(true))
+            );
+        } else if (cat === 'drogue') {
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Nom de la drogue').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('quantite').setLabel('Quantité').setStyle(TextInputStyle.Short)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('argent').setLabel('Argent').setStyle(TextInputStyle.Short))
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('argent').setLabel('Argent total').setStyle(TextInputStyle.Short))
             );
-        } else if (category === 'conteneur') {
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('objets').setLabel('Nombre d\'objets').setStyle(TextInputStyle.Short))
-            );
-        } else if (category === 'weed') {
-            modal.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('quantite').setLabel('Quantité récoltée').setStyle(TextInputStyle.Short))
-            );
-        } else if (category === 'gofast') {
+        } else if (cat === 'gofast') {
             modal.addComponents(
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('briques').setLabel('Total Briques').setStyle(TextInputStyle.Short)),
                 new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('argent').setLabel('Argent Total').setStyle(TextInputStyle.Short))
+            );
+        } else if (cat === 'weed') {
+            modal.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité récoltée').setStyle(TextInputStyle.Short))
             );
         } else {
             modal.addComponents(
@@ -143,29 +166,31 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // --- MISE À JOUR SUITE AU FORMULAIRE ---
+    // 3. RECEPTION DES MODALS
     if (interaction.isModalSubmit()) {
         const cid = interaction.channel.id;
         if (!comptes[cid]) return;
 
-        if (interaction.customId === 'modal_atm') {
+        if (interaction.customId === 'modal_conteneur') {
+            const n = interaction.fields.getTextInputValue('nom');
+            const q = parseInt(interaction.fields.getTextInputValue('qty')) || 0;
+            comptes[cid].conteneur.details.push({ nom: n, qty: q });
+            comptes[cid].conteneur.nombre++;
+        } else if (interaction.customId === 'modal_atm') {
             comptes[cid].atm.argent += parseInt(interaction.fields.getTextInputValue('argent')) || 0;
             comptes[cid].atm.nombre++;
         } else if (interaction.customId === 'modal_superette') {
             comptes[cid].superette.argent += parseInt(interaction.fields.getTextInputValue('argent')) || 0;
             comptes[cid].superette.nombre++;
-        } else if (interaction.customId === 'modal_conteneur') {
-            comptes[cid].conteneur.objets += parseInt(interaction.fields.getTextInputValue('objets')) || 0;
-            comptes[cid].conteneur.nombre++;
         } else if (interaction.customId === 'modal_drogue') {
             comptes[cid].drogue.nom = interaction.fields.getTextInputValue('nom');
-            comptes[cid].drogue.quantite += parseInt(interaction.fields.getTextInputValue('quantite')) || 0;
+            comptes[cid].drogue.quantite += parseInt(interaction.fields.getTextInputValue('qty')) || 0;
             comptes[cid].drogue.argent += parseInt(interaction.fields.getTextInputValue('argent')) || 0;
         } else if (interaction.customId === 'modal_gofast') {
             comptes[cid].gofast.briques += parseInt(interaction.fields.getTextInputValue('briques')) || 0;
             comptes[cid].gofast.argent += parseInt(interaction.fields.getTextInputValue('argent')) || 0;
         } else if (interaction.customId === 'modal_weed') {
-            comptes[cid].weed.quantite += parseInt(interaction.fields.getTextInputValue('quantite')) || 0;
+            comptes[cid].weed.quantite += parseInt(interaction.fields.getTextInputValue('qty')) || 0;
         }
 
         await interaction.update({ embeds: [generateEmbed(cid)] });
