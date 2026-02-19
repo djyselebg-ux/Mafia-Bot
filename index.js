@@ -18,24 +18,38 @@ const client = new Client({
 
 const comptes = {};
 
-// --- ENREGISTREMENT AUTOMATIQUE DES COMMANDES ---
-const commands = [{ name: 'compta', description: 'Créer la fiche comptable complète' }];
+// --- ENREGISTREMENT DE LA COMMANDE AVEC OPTION DE NOM ---
+const commands = [
+    {
+        name: 'compta',
+        description: 'Lancer la fiche comptable',
+        options: [
+            {
+                name: 'nom',
+                description: 'Le nom de votre organisation (ex: Mafia Sud, Cartel...)',
+                type: 3, // String
+                required: false
+            }
+        ]
+    }
+];
+
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ Commandes Slash enregistrées !');
+        console.log('✅ Commande chargée !');
     } catch (error) {
-        console.error('❌ Erreur commandes:', error);
+        console.error(error);
     }
 })();
 
-// --- FONCTION POUR GÉNÉRER L'AFFICHAGE ---
-function generateEmbed(channelId, channelName) {
+// --- FONCTION DE GÉNÉRATION DE L'EMBED ---
+function generateEmbed(channelId) {
     const data = comptes[channelId];
     return new EmbedBuilder()
-        .setTitle(`💼 COMPTABILITÉ - ${channelName}`)
+        .setTitle(`💼 ${data.nom_orga.toUpperCase()}`) // Utilise le nom choisi
         .setColor('#2ecc71')
         .setDescription(`
 🏧 **ATM**
@@ -64,14 +78,14 @@ function generateEmbed(channelId, channelName) {
         `);
 }
 
-client.once('ready', () => {
-    console.log('Bot en ligne 😈');
-});
-
 client.on('interactionCreate', async interaction => {
-    // Commande /compta
     if (interaction.isChatInputCommand() && interaction.commandName === 'compta') {
+        
+        // On récupère le nom choisi, sinon on met "Comptabilité" par défaut
+        const nomChoisi = interaction.options.getString('nom') || `COMPTABILITÉ - ${interaction.channel.name}`;
+
         comptes[interaction.channel.id] = {
+            nom_orga: nomChoisi, // On enregistre le nom ici
             atm: { argent: 0, nombre: 0 },
             superette: { argent: 0, nombre: 0 },
             conteneur: { objets: 0, nombre: 0 },
@@ -92,12 +106,12 @@ client.on('interactionCreate', async interaction => {
         );
 
         await interaction.reply({ 
-            embeds: [generateEmbed(interaction.channel.id, interaction.channel.name)], 
+            embeds: [generateEmbed(interaction.channel.id)], 
             components: [row1, row2] 
         });
     }
 
-    // Gestion des Boutons
+    // --- LOGIQUE DES BOUTONS ---
     if (interaction.isButton()) {
         const category = interaction.customId.replace('btn_', '');
         const modal = new ModalBuilder().setCustomId(`modal_${category}`).setTitle(`Ajout ${category}`);
@@ -129,10 +143,10 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // Gestion des Modals (Formulaires)
+    // --- MISE À JOUR SUITE AU FORMULAIRE ---
     if (interaction.isModalSubmit()) {
         const cid = interaction.channel.id;
-        if (!comptes[cid]) return interaction.reply({ content: "Erreur: relancez /compta", ephemeral: true });
+        if (!comptes[cid]) return;
 
         if (interaction.customId === 'modal_atm') {
             comptes[cid].atm.argent += parseInt(interaction.fields.getTextInputValue('argent')) || 0;
@@ -154,7 +168,7 @@ client.on('interactionCreate', async interaction => {
             comptes[cid].weed.quantite += parseInt(interaction.fields.getTextInputValue('quantite')) || 0;
         }
 
-        await interaction.update({ embeds: [generateEmbed(cid, interaction.channel.name)] });
+        await interaction.update({ embeds: [generateEmbed(cid)] });
     }
 });
 
