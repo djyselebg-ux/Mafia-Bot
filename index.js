@@ -10,7 +10,9 @@ const {
     TextInputStyle,
     REST,
     Routes,
-    PermissionFlagsBits
+    PermissionFlagsBits,
+    StringSelectMenuBuilder,
+    StringSelectMenuOptionBuilder
 } = require('discord.js');
 
 const client = new Client({
@@ -32,7 +34,7 @@ const TARIFS = {
     "Cigarette contrebande": 400, "Alcool contrebande": 400
 };
 
-// --- BOUTONS ---
+// --- BOUTONS COMPTA ---
 const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('btn_atm').setLabel('🏧 ATM').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('btn_superette').setLabel('🏪 Supérette').setStyle(ButtonStyle.Primary),
@@ -74,47 +76,23 @@ function generateComptaEmbed(channelId) {
     return new EmbedBuilder()
         .setColor('#3498db')
         .setTitle(`💼 GESTION : ${data.nom_orga.toUpperCase()}`)
-        .setDescription(`
-🏧 **ATM**
-💰 Argent : **${data.atm.argent}$** | 🔢 Nombre : **${data.atm.nombre}**
-
-🏪 **Supérette**
-💰 Argent : **${data.superette.argent}$** | 🔢 Nombre : **${data.superette.nombre}**
-
-📦 **Conteneur**
-💼 **Objets :**
-${listeObjets}
-🔢 Total Conteneurs : **${data.conteneur.nombre}**
-
-💸 **Vente Drogue**
-💰 Argent : **${argentVenteTotal}$**
-
-🚗 **Go Fast**
-💰 Argent : **${data.gofast.argent}$**
-
----
-💰 **TOTAL GÉNÉRÉ : ${totalGeneral}$**
-        `)
-        .setFooter({ text: "Système de gestion - Les Rejetés" });
+        .setDescription(`🏧 **ATM**\n💰 Argent : **${data.atm.argent}$**\n\n🏪 **Supérette**\n💰 Argent : **${data.superette.argent}$**\n\n📦 **Conteneur**\n${listeObjets}\n\n🚗 **Ventes / GoFast**\n💰 Argent : **${argentVenteTotal + data.gofast.argent}$**\n\n--- \n💰 **TOTAL GÉNÉRÉ : ${totalGeneral}$**`)
+        .setFooter({ text: "Les Rejetés - Gestion Interne" });
 }
 
-// --- SLASH COMMANDS ---
+// --- SLASH COMMANDS SETUP ---
 const commands = [
-    { 
-        name: 'panel', 
-        description: 'Ouvrir le panel de comptabilité',
-        options: [{ name: 'nom', description: 'Nom à afficher', type: 3, required: false }]
-    },
+    { name: 'panel', description: 'Ouvrir le panel de comptabilité', options: [{ name: 'nom', description: 'Nom affiché', type: 3 }] },
     { name: 'annonce', description: 'Faire une annonce officielle' },
-    { name: 'panel_abs', description: 'Formulaire d\'absence' },
-    { name: 'panel_ticket', description: 'Envoyer le système de ticket' }
+    { name: 'panel_abs', description: 'Envoyer le formulaire d\'absence' },
+    { name: 'panel_ticket', description: 'Envoyer le centre d\'assistance' }
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ Bot Les Rejetés sécurisé prêt');
+        console.log('✅ Bot Les Rejetés fully loaded');
     } catch (e) { console.error(e); }
 })();
 
@@ -122,130 +100,148 @@ client.on('interactionCreate', async interaction => {
     const isCompta = interaction.member.roles.cache.has(ROLE_COMPTA_ID);
     const isHautGrade = interaction.member.roles.cache.has(ROLE_HAUT_GRADE_ID);
 
+    // --- COMMANDES SLASH ---
     if (interaction.isChatInputCommand()) {
-        // BLOCAGE COMPTA
         if (interaction.commandName === 'panel') {
-            if (!isCompta) return interaction.reply({ content: "❌ Seul le **Pôle Comptabilité** peut utiliser cette commande.", ephemeral: true });
+            if (!isCompta) return interaction.reply({ content: "❌ Accès réservé au rôle **Comptabilité**.", ephemeral: true });
             const nomSaisi = interaction.options.getString('nom') || interaction.member.displayName;
             comptes[interaction.channel.id] = { nom_orga: nomSaisi, atm: { argent: 0, nombre: 0 }, superette: { argent: 0, nombre: 0 }, conteneur: { details: [], nombre: 0 }, drogue: { details: [] }, gofast: { argent: 0 } };
-            await interaction.reply({ embeds: [generateComptaEmbed(interaction.channel.id)], components: [row1, row2] });
+            return interaction.reply({ embeds: [generateComptaEmbed(interaction.channel.id)], components: [row1, row2] });
         }
 
-        // BLOCAGE HAUT GRADÉ
         if (['annonce', 'panel_abs', 'panel_ticket'].includes(interaction.commandName)) {
-            if (!isHautGrade) return interaction.reply({ content: "❌ Cette commande est réservée aux **Haut Gradés**.", ephemeral: true });
-            
+            if (!isHautGrade) return interaction.reply({ content: "❌ Réservé aux **Haut Gradés**.", ephemeral: true });
+
+            if (interaction.commandName === 'panel_ticket') {
+                const embed = new EmbedBuilder()
+                    .setTitle("📕 Centre d'assistance")
+                    .setDescription("Merci de choisir la catégorie correspondant à votre demande.")
+                    .setColor("#cc0000")
+                    .setFooter({ text: "Les Rejetés | Support" });
+
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId('menu_ticket')
+                    .setPlaceholder('Choisissez une catégorie...')
+                    .addOptions(
+                        new StringSelectMenuOptionBuilder().setLabel('Recrutements').setDescription('Postuler pour nous rejoindre').setValue('recrutement').setEmoji('👤'),
+                        new StringSelectMenuOptionBuilder().setLabel('Diplomatie').setDescription('Contact entre groupes / entreprises').setValue('diplomatie').setEmoji('🏘️'),
+                        new StringSelectMenuOptionBuilder().setLabel('Autres').setDescription('Toute autre demande').setValue('autre').setEmoji('❓')
+                    );
+
+                return interaction.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] });
+            }
+
             if (interaction.commandName === 'annonce') {
-                const modal = new ModalBuilder().setCustomId('modal_annonce').setTitle('Annonce Les Rejetés');
-                modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('txt').setLabel('Message').setStyle(TextInputStyle.Paragraph).setRequired(true)));
-                await interaction.showModal(modal);
-            } else if (interaction.commandName === 'panel_abs') {
-                const embed = new EmbedBuilder().setTitle("🚫 Les Rejetés – Absences").setDescription("Cliquez ci-dessous pour déclarer une absence.").setColor("#34495e");
-                const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_open_abs').setLabel('Signaler une absence').setStyle(ButtonStyle.Secondary));
-                await interaction.reply({ content: "Panel envoyé.", ephemeral: true });
-                return interaction.channel.send({ content: "@everyone", embeds: [embed], components: [btn] });
-            } else if (interaction.commandName === 'panel_ticket') {
-                const embed = new EmbedBuilder().setTitle("🎫 SUPPORT – LES REJETÉS").setDescription("Ouvrez un ticket pour recrutement ou autre.").setColor("#5865F2");
-                const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_ticket_init').setLabel('Ouvrir un Ticket').setStyle(ButtonStyle.Primary));
-                await interaction.reply({ content: "Panel envoyé.", ephemeral: true });
-                return interaction.channel.send({ embeds: [embed], components: [btn] });
+                const m = new ModalBuilder().setCustomId('modal_annonce').setTitle('Annonce Officielle');
+                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('txt').setLabel('Message').setStyle(TextInputStyle.Paragraph).setRequired(true)));
+                return await interaction.showModal(m);
+            }
+
+            if (interaction.commandName === 'panel_abs') {
+                const embed = new EmbedBuilder().setTitle("🚫 Les Rejetés – Absences").setDescription("Signalez vos absences ici.").setColor("#34495e");
+                const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_open_abs').setLabel('Déclarer une absence').setStyle(ButtonStyle.Secondary));
+                return interaction.reply({ embeds: [embed], components: [btn] });
             }
         }
     }
 
+    // --- MENU DÉROULANT TICKETS ---
+    if (interaction.isStringSelectMenu() && interaction.customId === 'menu_ticket') {
+        const type = interaction.values[0];
+        const modal = new ModalBuilder().setCustomId(`modal_ticket_${type}`).setTitle(`Ticket : ${type}`);
+        modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rp').setLabel('Nom Prénom RP').setStyle(TextInputStyle.Short).setRequired(true)));
+        return await interaction.showModal(modal);
+    }
+
+    // --- BOUTONS ---
     if (interaction.isButton()) {
         const cid = interaction.channel.id;
 
-        // PROTECTION BOUTONS COMPTA
+        // Sécurité Compta sur les boutons
         if (['btn_atm', 'btn_superette', 'btn_conteneur', 'btn_drogue', 'btn_gofast', 'btn_paie'].includes(interaction.customId)) {
-            if (!isCompta) return interaction.reply({ content: "❌ Vous n'avez pas le rôle **Comptabilité** pour modifier ces données.", ephemeral: true });
-            
+            if (!isCompta) return interaction.reply({ content: "❌ Réservé à la **Comptabilité**.", ephemeral: true });
+
             if (interaction.customId === 'btn_paie') {
                 const data = comptes[cid];
-                if (!data) return interaction.reply({ content: "Données introuvables.", ephemeral: true });
-                let argentConteneur = data.conteneur.details.reduce((s,i)=>s+(TARIFS[i.nom]*i.qty),0);
-                let argentVente = data.drogue.details.reduce((s,i)=>s+i.argent,0);
-                const total = data.atm.argent + data.superette.argent + argentVente + data.gofast.argent + argentConteneur;
-                return interaction.reply({ embeds: [new EmbedBuilder().setTitle("💸 BILAN DES PAIES (60%)").setColor("#f1c40f").setDescription(`**Session : ${data.nom_orga}**\n\n💰 Total : **${total}$**\n💵 **MEMBRES (60%) : ${Math.floor(total * 0.60)}$**`)] });
+                if (!data) return interaction.reply({ content: "Panel introuvable.", ephemeral: true });
+                let total = data.atm.argent + data.superette.argent + data.drogue.details.reduce((s,i)=>s+i.argent,0) + data.gofast.argent + data.conteneur.details.reduce((s,i)=>s+(TARIFS[i.nom]*i.qty),0);
+                return interaction.reply({ embeds: [new EmbedBuilder().setTitle("💸 BILAN (60%)").setColor("#f1c40f").setDescription(`💰 Total : **${total}$**\n💵 **MEMBRES (60%) : ${Math.floor(total * 0.60)}$**`) ]});
             }
 
             const cat = interaction.customId.replace('btn_', '');
-            if (!comptes[cid]) return;
-            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Ajout ${cat}`);
+            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Saisie ${cat}`);
             if (cat === 'conteneur') {
                 m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Objet').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nb').setLabel('Nombre Conteneurs').setStyle(TextInputStyle.Short).setValue("1")));
             } else if (cat === 'drogue') {
-                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Type').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Argent total').setStyle(TextInputStyle.Short)));
+                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Argent total').setStyle(TextInputStyle.Short)));
             } else {
                 m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant').setStyle(TextInputStyle.Short)));
             }
             return await interaction.showModal(m);
         }
 
-        // TICKETS & ABSENCES (Public/HG)
-        if (interaction.customId === 'btn_ticket_init') {
-            const m = new ModalBuilder().setCustomId('modal_ticket_open').setTitle('Ouverture de Ticket');
-            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rp').setLabel('Nom Prénom RP').setStyle(TextInputStyle.Short).setRequired(true)));
-            return await interaction.showModal(m);
-        }
         if (interaction.customId === 'btn_close_ticket') {
             await interaction.channel.setParent(CAT_TICKET_FERME);
-            return interaction.reply({ content: "🔒 Ticket archivé.", components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_delete_ticket').setLabel('Supprimer').setStyle(ButtonStyle.Danger))] });
+            const rowDel = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_delete_ticket').setLabel('Supprimer définitivement').setStyle(ButtonStyle.Danger));
+            return interaction.reply({ content: "🔒 Ticket archivé.", components: [rowDel] });
         }
+
         if (interaction.customId === 'btn_delete_ticket') {
-            if (!isHautGrade) return interaction.reply({ content: "❌ Seuls les **Haut Gradés** peuvent supprimer un ticket.", ephemeral: true });
+            if (!isHautGrade) return interaction.reply({ content: "❌ Réservé aux **Haut Gradés**.", ephemeral: true });
             return interaction.channel.delete();
         }
+
         if (interaction.customId === 'btn_open_abs') {
-            const m = new ModalBuilder().setCustomId('modal_abs_submit').setTitle('Déclaration Absence');
+            const m = new ModalBuilder().setCustomId('modal_abs_submit').setTitle('Formulaire d\'absence');
             m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('n').setLabel('Nom RP').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('d').setLabel('Dates').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('m').setLabel('Motif').setStyle(TextInputStyle.Paragraph).setRequired(true)));
             return await interaction.showModal(m);
         }
     }
 
-    // --- MODALS SUBMIT (Logique métier) ---
+    // --- MODALS SUBMIT ---
     if (interaction.isModalSubmit()) {
         const cid = interaction.channel.id;
-        if (interaction.customId.startsWith('modal_')) {
-            // Gestion Compta
-            if (['modal_atm', 'modal_superette', 'modal_conteneur', 'modal_drogue', 'modal_gofast'].includes(interaction.customId)) {
-                if (interaction.customId === 'modal_conteneur') {
-                    const n = trouverObjet(interaction.fields.getTextInputValue('nom'));
-                    if (!n) return interaction.reply({ content: "Objet invalide", ephemeral: true });
-                    comptes[cid].conteneur.details.push({ nom: n, qty: parseInt(interaction.fields.getTextInputValue('qty')) || 0 });
-                    comptes[cid].conteneur.nombre += parseInt(interaction.fields.getTextInputValue('nb')) || 0;
-                } else if (interaction.customId === 'modal_drogue') {
-                    comptes[cid].drogue.details.push({ argent: parseInt(interaction.fields.getTextInputValue('arg')) || 0 });
-                } else if (interaction.customId === 'modal_atm') {
-                    comptes[cid].atm.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0; comptes[cid].atm.nombre++;
-                } else if (interaction.customId === 'modal_superette') {
-                    comptes[cid].superette.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0; comptes[cid].superette.nombre++;
-                } else if (interaction.customId === 'modal_gofast') {
-                    comptes[cid].gofast.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0;
-                }
-                return await interaction.update({ embeds: [generateComptaEmbed(cid)], components: [row1, row2] });
+
+        if (interaction.customId.startsWith('modal_ticket_')) {
+            const type = interaction.customId.split('_')[2];
+            const rp = interaction.fields.getTextInputValue('rp');
+            const ch = await interaction.guild.channels.create({
+                name: `🎫-${type}-${rp}`, parent: CAT_TICKET_OUVERT,
+                permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel] }, { id: ROLE_HAUT_GRADE_ID, allow: [PermissionFlagsBits.ViewChannel] }]
+            });
+            const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fermer').setStyle(ButtonStyle.Danger));
+            await ch.send({ content: `<@&${ROLE_HAUT_GRADE_ID}>`, embeds: [new EmbedBuilder().setTitle(`Support : ${type.toUpperCase()}`).setDescription(`Candidat/Contact : **${rp}**\n\nMerci de patienter.`)], components: [btn] });
+            return interaction.reply({ content: "Ticket ouvert.", ephemeral: true });
+        }
+
+        if (interaction.customId === 'modal_annonce') {
+            await interaction.reply({ content: "Annonce envoyée.", ephemeral: true });
+            return interaction.channel.send({ content: interaction.fields.getTextInputValue('txt') });
+        }
+
+        if (interaction.customId === 'modal_abs_submit') {
+            const e = new EmbedBuilder().setTitle("📋 ABSENCE").setColor("#34495e").addFields({name:"👤 Nom",value:interaction.fields.getTextInputValue('n')},{name:"📅 Dates",value:interaction.fields.getTextInputValue('d')},{name:"📝 Motif",value:interaction.fields.getTextInputValue('m')});
+            await interaction.reply({ content: "Transmis.", ephemeral: true });
+            return interaction.channel.send({ embeds: [e] });
+        }
+
+        // Logic Compta
+        if (comptes[cid]) {
+            if (interaction.customId === 'modal_conteneur') {
+                const n = trouverObjet(interaction.fields.getTextInputValue('nom'));
+                if (!n) return interaction.reply({ content: "Objet inconnu.", ephemeral: true });
+                comptes[cid].conteneur.details.push({ nom: n, qty: parseInt(interaction.fields.getTextInputValue('qty')) || 0 });
+                comptes[cid].conteneur.nombre += parseInt(interaction.fields.getTextInputValue('nb')) || 0;
+            } else if (interaction.customId === 'modal_drogue') {
+                comptes[cid].drogue.details.push({ argent: parseInt(interaction.fields.getTextInputValue('arg')) || 0 });
+            } else if (interaction.customId === 'modal_atm') {
+                comptes[cid].atm.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0;
+            } else if (interaction.customId === 'modal_superette') {
+                comptes[cid].superette.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0;
+            } else if (interaction.customId === 'modal_gofast') {
+                comptes[cid].gofast.argent += parseInt(interaction.fields.getTextInputValue('arg')) || 0;
             }
-            
-            // Gestion Annonces / Absences / Tickets
-            if (interaction.customId === 'modal_annonce') {
-                await interaction.reply({ content: "Envoyée.", ephemeral: true });
-                return interaction.channel.send({ content: interaction.fields.getTextInputValue('txt') });
-            }
-            if (interaction.customId === 'modal_abs_submit') {
-                const e = new EmbedBuilder().setTitle("📋 ABSENCE").setColor("#34495e").addFields({name:"👤 Nom",value:interaction.fields.getTextInputValue('n')},{name:"📅 Dates",value:interaction.fields.getTextInputValue('d')},{name:"📝 Motif",value:interaction.fields.getTextInputValue('m')});
-                await interaction.reply({ content: "Absence transmise.", ephemeral: true });
-                return interaction.channel.send({ embeds: [e] });
-            }
-            if (interaction.customId === 'modal_ticket_open') {
-                const rp = interaction.fields.getTextInputValue('rp');
-                const ch = await interaction.guild.channels.create({
-                    name: `🎫-${rp}`, parent: CAT_TICKET_OUVERT,
-                    permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel] }, { id: ROLE_HAUT_GRADE_ID, allow: [PermissionFlagsBits.ViewChannel] }]
-                });
-                const btns = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fermer').setStyle(ButtonStyle.Danger));
-                await ch.send({ content: `<@&${ROLE_HAUT_GRADE_ID}>`, embeds: [new EmbedBuilder().setTitle("Nouveau Ticket").setDescription(`Bienvenue **${rp}**`)], components: [btns] });
-                return interaction.reply({ content: "Ticket ouvert.", ephemeral: true });
-            }
+            return await interaction.update({ embeds: [generateComptaEmbed(cid)], components: [row1, row2] });
         }
     }
 });
