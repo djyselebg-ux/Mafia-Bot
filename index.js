@@ -17,11 +17,11 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
 });
 
-// --- CONFIGURATION DES IDS ---
-const ROLE_COMPTA_ID = "1473990774579265590";
-const ROLE_HAUT_GRADE_ID = "1473815853181960262";
-const CAT_TICKET_OUVERT = "1474015367570395218";
-const CAT_TICKET_FERME = "1474015410574594231";
+// --- CONFIGURATION DES NOUVEAUX IDS ---
+const ROLE_COMPTA_ID = "1475156397187661987";
+const ROLE_HAUT_GRADE_ID = "1475156249220878469";
+const CAT_TICKET_OUVERT = "1475154988060643438";
+const CAT_TICKET_FERME = "1475155112707096606";
 
 const comptes = {};
 
@@ -108,14 +108,14 @@ const commands = [
     },
     { name: 'annonce', description: 'Faire une annonce officielle' },
     { name: 'panel_abs', description: 'Formulaire d\'absence' },
-    { name: 'panel_ticket', description: 'Système de ticket' }
+    { name: 'panel_ticket', description: 'Envoyer le système de ticket' }
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 (async () => {
     try {
         await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-        console.log('✅ Bot Les Rejetés prêt (60% Paies - Sans Weed)');
+        console.log('✅ Bot Les Rejetés prêt sur le nouveau serveur');
     } catch (e) { console.error(e); }
 })();
 
@@ -231,6 +231,19 @@ client.on('interactionCreate', async interaction => {
             } else if (interaction.customId === 'modal_annonce') {
                 await interaction.reply({ content: "Envoyée.", ephemeral: true });
                 return interaction.channel.send({ content: interaction.fields.getTextInputValue('txt') });
+            } else if (interaction.customId === 'modal_abs_submit') {
+                const e = new EmbedBuilder().setTitle("📋 ABSENCE").setColor("#34495e").addFields({name:"👤 Nom",value:interaction.fields.getTextInputValue('n')},{name:"📅 Dates",value:interaction.fields.getTextInputValue('d')},{name:"📝 Motif",value:interaction.fields.getTextInputValue('m')});
+                await interaction.reply({ content: "Absence transmise.", ephemeral: true });
+                return interaction.channel.send({ embeds: [e] });
+            } else if (interaction.customId === 'modal_ticket_open') {
+                const rp = interaction.fields.getTextInputValue('rp');
+                const ch = await interaction.guild.channels.create({
+                    name: `🎫-${rp}`, parent: CAT_TICKET_OUVERT,
+                    permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel] }, { id: ROLE_HAUT_GRADE_ID, allow: [PermissionFlagsBits.ViewChannel] }]
+                });
+                const btns = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('btn_close_ticket').setLabel('Fermer').setStyle(ButtonStyle.Danger));
+                await ch.send({ content: `<@&${ROLE_HAUT_GRADE_ID}>`, embeds: [new EmbedBuilder().setTitle("Nouveau Ticket").setDescription(`Bienvenue **${rp}**`)], components: [btns] });
+                return interaction.reply({ content: "Ticket ouvert.", ephemeral: true });
             }
             return await interaction.update({ embeds: [generateComptaEmbed(cid)], components: [row1, row2] });
         }
