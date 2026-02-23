@@ -1,9 +1,11 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V9.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V10.0)
  * ==============================================================================
- * ARCHITECTURE INDUSTRIELLE - TOUT-EN-UN
- * MODIFICATIONS : Calculs automatiques & Système de stockage de preuves URL.
+ * MODIFICATIONS : 
+ * 1. Suppression de la photo de profil (Thumbnail).
+ * 2. Preuves de conteneurs en liens cliquables textuels (bleu).
+ * 3. Calcul total argent (Brique 17500$ / Pochon 315$).
  * ==============================================================================
  */
 
@@ -55,13 +57,13 @@ const CONFIG = {
     COLORS: { NEUTRAL: 0x2b2d31, SUCCESS: 0x57f287, CRITICAL: 0xed4245, BLUE: 0x5865f2, GOLD: 0xfaa61a }
 };
 
-// --- SÉCURITÉ ---
+// --- SÉCURITÉ ANTI-CRASH ---
 process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reason));
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V9 Connecté : ${client.user.tag}`);
-    client.user.setActivity('Administration Les Rejetés', { type: ActivityType.Watching });
+    console.log(`>>> Bot V10 Connecté : ${client.user.tag}`);
+    client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -117,6 +119,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.customId === 'farm_action_conteneur') {
             if (!data) return interaction.reply({ content: "❌ Activez une session.", ephemeral: true });
             await interaction.reply({ content: "📥 Envoyez la photo du conteneur.", ephemeral: true });
+            
             const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
             const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 60000 });
 
@@ -130,8 +133,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
                     await logC.send({ embeds: [logEmb] });
                 }
                 if (msg.deletable) await msg.delete().catch(() => {});
-                await interaction.followUp({ content: "✅ Photo enregistrée dans la session.", ephemeral: true });
-                try { await interaction.message.edit({ embeds: [buildFarmEmbed(interaction.user, data)], components: buildRows(data) }); } catch(e) {}
+                await interaction.followUp({ content: "✅ Photo enregistrée.", ephemeral: true });
+                try { await interaction.message.edit({ embeds: [buildFarmEmbed(interaction.user, data)] }); } catch(e) {}
             });
         }
 
@@ -175,7 +178,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const sName = interaction.fields.getTextInputValue('session_name_input');
             farmSessions.set(userId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0, conteneur_links: [] });
             const data = farmSessions.get(userId);
-            await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, data)], components: buildRows(data) });
+            await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
         }
 
         if (interaction.customId.startsWith('modal_farm_add_')) {
@@ -183,12 +186,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const field = interaction.customId.split('_')[3];
             const value = parseInt(interaction.fields.getTextInputValue('val_input'));
             if (!isNaN(value) && data) data[field] += value;
-            await interaction.update({ embeds: [buildFarmEmbed(interaction.user, data)], components: buildRows(data) });
+            await interaction.update({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
         }
     }
 });
 
-function buildRows(data) {
+function getRows() {
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('farm_btn_sale').setLabel('Argent Sale').setStyle(ButtonStyle.Primary).setEmoji('💰'),
         new ButtonBuilder().setCustomId('farm_btn_brique').setLabel('Brique').setStyle(ButtonStyle.Primary).setEmoji('📦'),
@@ -202,21 +205,17 @@ function buildRows(data) {
     const row3 = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('farm_action_finish').setLabel('Terminer').setStyle(ButtonStyle.Secondary).setEmoji('📁')
     );
-
-    // Ajout des boutons de preuve
-    const rows = [row1, row2, row3];
-    if (data.conteneur_links.length > 0) {
-        const proofRow = new ActionRowBuilder();
-        data.conteneur_links.slice(-5).forEach((url, index) => { // Affiche les 5 dernières preuves
-            proofRow.addComponents(new ButtonBuilder().setLabel(`Preuve 🔎`).setStyle(ButtonStyle.Link).setURL(url));
-        });
-        rows.push(proofRow);
-    }
-    return rows;
+    return [row1, row2, row3];
 }
 
 function buildFarmEmbed(user, data) {
     const totalArgent = (data.brique * CONFIG.PRICES.BRIQUE) + (data.pochon * CONFIG.PRICES.POCHON);
+    
+    // Génération des liens "Preuve" cliquables en bleu (Markdown)
+    const listPreuves = data.conteneur_links.length > 0 
+        ? data.conteneur_links.map((url, i) => `[Preuve ${i + 1}](${url})`).join(' | ') 
+        : '*Aucune preuve*';
+
     const fields = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
         `📦 **Briques de weed :** \`${data.brique}\``,
@@ -224,13 +223,15 @@ function buildFarmEmbed(user, data) {
         `🧪 **Speedo Acide :** \`${data.speedo}\``,
         `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
         `📥 **Conteneurs :** \`${data.conteneur_links.length}\``,
+        `${listPreuves}`, // Affichage des liens en bleu juste en dessous
         `💵 **TOTAL ARGENT :** \`${totalArgent.toLocaleString()}$\``
     ];
 
     return new EmbedBuilder()
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
         .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${fields.join('\n')}\n------------------------------------------`)
-        .setColor(CONFIG.COLORS.NEUTRAL).setThumbnail(user.displayAvatarURL())
+        .setColor(CONFIG.COLORS.NEUTRAL)
+        // Thumbnail supprimé ici
         .setFooter({ text: `Gestionnaire : ${user.username}` });
 }
 
