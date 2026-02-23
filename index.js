@@ -1,12 +1,11 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V11.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V12.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. FIX : Liens de preuves persistants (stockage sur log avant suppression).
- * 2. Suppression de la photo de profil (Thumbnail).
- * 3. Preuves de conteneurs en liens cliquables textuels (bleu).
- * 4. Calcul total argent (Brique 17500$ / Pochon 315$).
+ * 1. Suppression TOTALE du module Conteneur.
+ * 2. Maintien du calcul total argent (Brique 17500$ / Pochon 315$).
+ * 3. Maintien du nom de session personnalisé et suppression Thumbnail.
  * ==============================================================================
  */
 
@@ -47,7 +46,6 @@ const CONFIG = {
     PRICES: { BRIQUE: 17500, POCHON: 315 },
     IDS: {
         CHANNELS: {
-            LOG_CONTENEUR: "ID_LOG_CONTENEUR",
             LOG_ABSENCE: "ID_LOG_ABSENCE",
             LOG_TICKETS: "ID_LOG_TICKETS",
             LOG_SESSIONS: "ID_LOG_SESSIONS",
@@ -63,7 +61,7 @@ process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reaso
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V11 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V12 Connecté : ${client.user.tag}`);
     client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
 });
 
@@ -117,33 +115,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.update({ content: "✅ Session clôturée.", embeds: [], components: [] });
         }
 
-        if (interaction.customId === 'farm_action_conteneur') {
-            if (!data) return interaction.reply({ content: "❌ Activez une session.", ephemeral: true });
-            await interaction.reply({ content: "📥 Envoyez la photo du conteneur.", ephemeral: true });
-            
-            const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
-            const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 60000 });
-
-            collector.on('collect', async (msg) => {
-                const attachment = msg.attachments.first();
-                const logC = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_CONTENEUR);
-                
-                if (logC) {
-                    // Sauvegarde permanente dans les logs avant suppression
-                    const logEmb = new EmbedBuilder().setTitle(`📦 CONTENEUR : ${data.name}`).setImage(attachment.url).setColor(CONFIG.COLORS.CRITICAL);
-                    const savedLog = await logC.send({ embeds: [logEmb] });
-                    // On stocke l'URL du log qui ne sera pas supprimé
-                    data.conteneur_links.push(savedLog.embeds[0].image.url);
-                } else {
-                    data.conteneur_links.push(attachment.url);
-                }
-
-                if (msg.deletable) await msg.delete().catch(() => {});
-                await interaction.followUp({ content: "✅ Photo enregistrée et sécurisée.", ephemeral: true });
-                try { await interaction.message.edit({ embeds: [buildFarmEmbed(interaction.user, data)] }); } catch(e) {}
-            });
-        }
-
         if (interaction.customId === 'ticket_sys_open') {
             const ticketChan = await interaction.guild.channels.create({
                 name: `ticket-${interaction.user.username}`,
@@ -182,7 +153,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'modal_init_session') {
             const sName = interaction.fields.getTextInputValue('session_name_input');
-            farmSessions.set(userId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0, conteneur_links: [] });
+            farmSessions.set(userId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 });
             const data = farmSessions.get(userId);
             await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
         }
@@ -207,9 +178,6 @@ function getRows() {
         new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('farm_btn_speedo').setLabel('Speedo').setStyle(ButtonStyle.Success).setEmoji('🧪'),
             new ButtonBuilder().setCustomId('farm_btn_recel').setLabel('Recel').setStyle(ButtonStyle.Success).setEmoji('🔌'),
-            new ButtonBuilder().setCustomId('farm_action_conteneur').setLabel('Conteneur').setStyle(ButtonStyle.Danger).setEmoji('📥')
-        ),
-        new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('farm_action_finish').setLabel('Terminer').setStyle(ButtonStyle.Secondary).setEmoji('📁')
         )
     ];
@@ -218,19 +186,12 @@ function getRows() {
 function buildFarmEmbed(user, data) {
     const totalArgent = (data.brique * CONFIG.PRICES.BRIQUE) + (data.pochon * CONFIG.PRICES.POCHON);
     
-    // Rendu des preuves en format Markdown (Textes bleus cliquables)
-    const listPreuves = data.conteneur_links.length > 0 
-        ? data.conteneur_links.map((url, i) => `[Preuve ${i + 1}](${url})`).join(' | ') 
-        : '*Aucune preuve*';
-
     const lines = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
         `📦 **Briques de weed :** \`${data.brique}\``,
         `🌿 **Pochons de weed :** \`${data.pochon}\``,
         `🧪 **Speedo Acide :** \`${data.speedo}\``,
         `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
-        `📥 **Conteneurs :** \`${data.conteneur_links.length}\``,
-        `${listPreuves}`,
         `💵 **TOTAL ARGENT :** \`${totalArgent.toLocaleString()}$\``
     ];
 
