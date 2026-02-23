@@ -9,23 +9,17 @@ const {
     TextInputBuilder,
     TextInputStyle,
     REST,
-    Routes,
-    PermissionFlagsBits,
-    StringSelectMenuBuilder,
-    StringSelectMenuOptionBuilder
+    Routes
 } = require('discord.js');
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 // --- CONFIGURATION ---
 const ROLE_COMPTA_ID = "1475156397187661987";
-const ROLE_HAUT_GRADE_ID = "1475156249220878469";
-const CAT_TICKET_OUVERT = "1475154988060643438";
-const CAT_TICKET_FERME = "1475155112707096606";
-
-const comptes = {};
+const accounts = {};
+const waitingPhoto = new Map();
 
 const TARIFS = {
     "Saphir": 12000, "Emeraude": 13000, "Rubis": 13500, "Diamant": 15000,
@@ -34,159 +28,136 @@ const TARIFS = {
     "Cigarette contrebande": 400, "Alcool contrebande": 400
 };
 
-// --- BOUTONS ---
-const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('btn_atm').setLabel('🏧 ATM').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('btn_superette').setLabel('🏪 Supérette').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('btn_conteneur').setLabel('📦 Conteneur').setStyle(ButtonStyle.Primary)
-);
-const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('btn_drogue').setLabel('💸 Vente').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('btn_gofast').setLabel('🚗 Go Fast').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('btn_paie').setLabel('💰 CALCULER PAIES (60%)').setStyle(ButtonStyle.Danger)
-);
-const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('btn_modifier').setLabel('🛠️ MODIFIER UNE SAISIE').setStyle(ButtonStyle.Secondary)
-);
+// --- INTERFACE BOUTONS ---
+const getButtons = () => [
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_argent_sale').setLabel('💸 Argent Sale').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('btn_brique_weed').setLabel('🌿 Brique Weed').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('btn_pochon_weed').setLabel('🍃 Pochon Weed').setStyle(ButtonStyle.Success)
+    ),
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_speedo_acide').setLabel('🧪 Speedo Acide').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_recel').setLabel('💰 Recel').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('btn_conteneur').setLabel('📦 Conteneur').setStyle(ButtonStyle.Secondary)
+    ),
+    new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('btn_modifier').setLabel('🛠️ MODIFIER').setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('btn_gofast').setLabel('🚗 Go Fast').setStyle(ButtonStyle.Primary)
+    )
+];
 
-// --- FONCTIONS ---
-function trouverObjet(input) {
-    const raw = input.trim().toLowerCase();
-    return Object.keys(TARIFS).find(key => {
-        const cleanKey = key.toLowerCase();
-        return cleanKey === raw || cleanKey === raw.replace(/s$/, '') || cleanKey.replace(/s$/, '') === raw;
+// --- GENERATION DE L'EMBED AVEC LIENS BLEUS ---
+function generateEmbed(cid) {
+    const data = accounts[cid];
+    let total = 0;
+    let details = "";
+
+    data.details.forEach((item) => {
+        if (item.type === 'conteneur') {
+            const p = (TARIFS[item.nom] || 0) * item.qty;
+            // ICI : Création du texte bleu cliquable si une photo existe
+            const lienPhoto = item.photo ? ` — [**Preuve 🖼️**](${item.photo})` : "";
+            
+            details += `📦 **${item.qty_cont} Boîte(s)** (${item.qty}x ${item.nom})${lienPhoto} : \`${p}$\`\n`;
+            total += p;
+        } else {
+            const em = { argent_sale: '💸', brique_weed: '🌿', pochon_weed: '🍃', speedo_acide: '🧪', recel: '💰', gofast: '🚗' };
+            details += `${em[item.type] || '🔹'} **${item.type.toUpperCase()}** : \`${item.montant}$\`\n`;
+            total += item.montant;
+        }
     });
-}
-
-function generateComptaEmbed(channelId) {
-    const data = comptes[channelId];
-    if (!data) return new EmbedBuilder().setTitle("Erreur").setDescription("Données introuvables.");
-
-    let totalGlobal = 0;
-    let recapTxt = "";
-
-    // On parcourt toutes les saisies pour construire une liste unique
-    if (data.details.length === 0) {
-        recapTxt = "*Aucune donnée enregistrée pour le moment.*";
-    } else {
-        data.details.forEach(item => {
-            if (item.type === 'conteneur') {
-                const prix = (TARIFS[item.nom] || 0) * item.qty;
-                recapTxt += `📦 **${item.qty}x ${item.nom}** : \`${prix}$\`\n`;
-                totalGlobal += prix;
-            } else {
-                const emoji = item.type === 'atm' ? '🏧' : item.type === 'superette' ? '🏪' : item.type === 'drogue' ? '💸' : '🚗';
-                recapTxt += `${emoji} **${item.type.toUpperCase()}** : \`${item.montant}$\`\n`;
-                totalGlobal += item.montant;
-            }
-        });
-    }
 
     return new EmbedBuilder()
         .setColor('#2b2d31')
         .setTitle(`💼 SESSION : ${data.nom_orga.toUpperCase()}`)
-        .setDescription(`
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-**DÉTAIL DES SAISIES**
-${recapTxt}
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 **TOTAL GÉNÉRÉ : ${totalGlobal}$**
-━━━━━━━━━━━━━━━━━━━━━━━━━━`)
-        .setTimestamp()
-        .setFooter({ text: "Gestion Les Rejetés" });
+        .setDescription(`━━━━━━━━━━━━━━━━━━━━━━━━━━\n${details || "*Aucune donnée*"}\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 **TOTAL : ${total}$**\n━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+        .setFooter({ text: "Les Rejetés - Cliquez sur 'Preuve' pour voir l'image" });
 }
 
-// --- LOGIQUE INTERACTIONS ---
-client.on('interactionCreate', async interaction => {
-    const isCompta = interaction.member.roles.cache.has(ROLE_COMPTA_ID);
-    const cid = interaction.channel.id;
+// --- LOGIQUE PHOTO ---
+client.on('messageCreate', async message => {
+    if (message.author.bot || !waitingPhoto.has(message.author.id)) return;
 
-    if (interaction.isChatInputCommand() && interaction.commandName === 'panel') {
-        if (!isCompta) return interaction.reply({ content: "❌ Réservé à la **Comptabilité**.", ephemeral: true });
-        const nom = interaction.options.getString('nom') || interaction.member.displayName;
-        comptes[cid] = { nom_orga: nom, details: [] };
-        return interaction.reply({ embeds: [generateComptaEmbed(cid)], components: [row1, row2, row3] });
-    }
+    const cid = message.channel.id;
+    if (message.attachments.size > 0) {
+        const temp = waitingPhoto.get(message.author.id);
+        accounts[cid].details.push({ 
+            type: 'conteneur', 
+            qty_cont: temp.nb, 
+            nom: temp.nom, 
+            qty: temp.qty, 
+            photo: message.attachments.first().url // On stocke l'URL de l'image
+        });
 
-    if (interaction.isButton()) {
-        if (!isCompta) return interaction.reply({ content: "❌ Permission refusée.", ephemeral: true });
+        waitingPhoto.delete(message.author.id);
+        await message.delete(); // On nettoie le salon
 
-        // CALCUL PAIES 60%
-        if (interaction.customId === 'btn_paie') {
-            const data = comptes[cid];
-            let total = 0;
-            data.details.forEach(i => {
-                if (i.type === 'conteneur') total += (TARIFS[i.nom] * i.qty);
-                else total += i.montant;
-            });
-
-            const embedPaie = new EmbedBuilder()
-                .setTitle("💸 RÉPARTITION (60%)")
-                .setColor("#f1c40f")
-                .setDescription(`💰 Total : **${total}$**\n\n💵 **Membres (60%) : ${Math.floor(total * 0.60)}$**\n🏦 **Groupe (40%) : ${Math.floor(total * 0.40)}$**`);
-
-            return interaction.reply({ embeds: [embedPaie] });
-        }
-
-        // SYSTÈME DE MODIFICATION
-        if (interaction.customId === 'btn_modifier') {
-            const data = comptes[cid];
-            if (!data || data.details.length === 0) return interaction.reply({ content: "Rien à modifier.", ephemeral: true });
-
-            const lastEntries = data.details.slice(-5).reverse();
-            const btns = lastEntries.map((entry, index) => {
-                const realIndex = data.details.indexOf(entry);
-                const label = entry.type === 'conteneur' ? `Suppr. ${entry.nom}` : `Suppr. ${entry.type} (${entry.montant}$)`;
-                return new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId(`del_${realIndex}`).setLabel(label).setStyle(ButtonStyle.Danger)
-                );
-            });
-
-            return interaction.reply({ content: "🛠️ Cliquez sur l'élément à supprimer :", components: btns, ephemeral: true });
-        }
-
-        // CONFIRMATION SUPPRESSION
-        if (interaction.customId.startsWith('del_')) {
-            const index = parseInt(interaction.customId.split('_')[1]);
-            comptes[cid].details.splice(index, 1);
-            await interaction.update({ content: "✅ Saisie retirée.", components: [], ephemeral: true });
-            
-            const messages = await interaction.channel.messages.fetch({ limit: 10 });
-            const mainPanel = messages.find(m => m.embeds.length > 0 && m.embeds[0].title.includes("SESSION :"));
-            if (mainPanel) await mainPanel.edit({ embeds: [generateComptaEmbed(cid)] });
-        }
-
-        // MODALS SAISIE
-        if (['btn_atm', 'btn_superette', 'btn_conteneur', 'btn_drogue', 'btn_gofast'].includes(interaction.customId)) {
-            const cat = interaction.customId.replace('btn_', '');
-            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Saisie ${cat}`);
-            if (cat === 'conteneur') {
-                m.addComponents(
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Objet').setStyle(TextInputStyle.Short)),
-                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short).setValue("1"))
-                );
-            } else {
-                m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant total').setStyle(TextInputStyle.Short)));
-            }
-            return await interaction.showModal(m);
-        }
-    }
-
-    if (interaction.isModalSubmit()) {
-        const cat = interaction.customId.replace('modal_', '');
-        if (!comptes[cid]) return;
-
-        if (cat === 'conteneur') {
-            const n = trouverObjet(interaction.fields.getTextInputValue('nom'));
-            if (!n) return interaction.reply({ content: "❌ Objet invalide.", ephemeral: true });
-            comptes[cid].details.push({ type: 'conteneur', nom: n, qty: parseInt(interaction.fields.getTextInputValue('qty')) || 1 });
-        } else {
-            const val = parseInt(interaction.fields.getTextInputValue('arg')) || 0;
-            comptes[cid].details.push({ type: cat, montant: val });
-        }
-        
-        return await interaction.update({ embeds: [generateComptaEmbed(cid)], components: [row1, row2, row3] });
+        const main = (await message.channel.messages.fetch({ limit: 10 })).find(m => m.embeds[0]?.title?.includes("SESSION :"));
+        if (main) await main.edit({ embeds: [generateEmbed(cid)], components: getButtons() });
     }
 });
 
-client.login(process.env.TOKEN);
+// --- INTERACTIONS ---
+client.on('interactionCreate', async i => {
+    if (!i.member.roles.cache.has(ROLE_COMPTA_ID)) return i.reply({ content: "❌ Accès refusé.", ephemeral: true });
+    const cid = i.channel.id;
+
+    if (i.isChatInputCommand() && i.commandName === 'panel') {
+        accounts[cid] = { nom_orga: i.member.displayName, details: [] };
+        return i.reply({ embeds: [generateEmbed(cid)], components: getButtons() });
+    }
+
+    if (i.isButton()) {
+        if (i.customId === 'btn_conteneur') {
+            const m = new ModalBuilder().setCustomId('modal_cont').setTitle('📦 Conteneur');
+            m.addComponents(
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nb').setLabel('Nombre de boîtes').setStyle(TextInputStyle.Short).setValue("1")),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('nom').setLabel('Objet').setStyle(TextInputStyle.Short)),
+                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty').setLabel('Quantité').setStyle(TextInputStyle.Short).setValue("1"))
+            );
+            return await i.showModal(m);
+        }
+
+        if (i.customId === 'btn_modifier') {
+            const data = accounts[cid];
+            if (!data?.details.length) return i.reply({ content: "Vide.", ephemeral: true });
+            const btns = data.details.slice(-4).reverse().map((d) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`del_${data.details.indexOf(d)}`).setLabel(`Suppr. ${d.nom || d.type}`).setStyle(ButtonStyle.Danger)));
+            return i.reply({ content: "🛠️ Correction :", components: btns, ephemeral: true });
+        }
+
+        if (i.customId.startsWith('del_')) {
+            const idx = parseInt(i.customId.split('_')[1]);
+            accounts[cid].details.splice(idx, 1);
+            await i.update({ content: "✅ Supprimé.", components: [], ephemeral: true });
+            const main = (await i.channel.messages.fetch({ limit: 10 })).find(m => m.embeds[0]?.title?.includes("SESSION :"));
+            if (main) await main.edit({ embeds: [generateEmbed(cid)], components: getButtons() });
+            return;
+        }
+
+        const cat = i.customId.replace('btn_', '');
+        if (['argent_sale', 'brique_weed', 'pochon_weed', 'speedo_acide', 'recel', 'gofast'].includes(cat)) {
+            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Saisie ${cat}`);
+            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant ($)').setStyle(TextInputStyle.Short)));
+            return await i.showModal(m);
+        }
+    }
+
+    if (i.isModalSubmit()) {
+        if (i.customId === 'modal_cont') {
+            const inputNom = i.fields.getTextInputValue('nom').trim();
+            const rawNom = Object.keys(TARIFS).find(k => k.toLowerCase() === inputNom.toLowerCase()) || inputNom;
+            
+            waitingPhoto.set(i.user.id, { 
+                nb: i.fields.getTextInputValue('nb'), 
+                nom: rawNom, 
+                qty: i.fields.getTextInputValue('qty') 
+            });
+            return i.reply({ content: "📸 **Envoie la photo du loot maintenant.**", ephemeral: true });
+        }
+        const cat = i.customId.replace('modal_', '');
+        accounts[cid].details.push({ type: cat, montant: parseInt(i.fields.getTextInputValue('arg')) || 0 });
+        return await i.update({ embeds: [generateEmbed(cid)], components: getButtons() });
+    }
+});
+
+client.login("TON_TOKEN");
