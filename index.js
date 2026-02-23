@@ -1,11 +1,12 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V10.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V11.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. Suppression de la photo de profil (Thumbnail).
- * 2. Preuves de conteneurs en liens cliquables textuels (bleu).
- * 3. Calcul total argent (Brique 17500$ / Pochon 315$).
+ * 1. FIX : Liens de preuves persistants (stockage sur log avant suppression).
+ * 2. Suppression de la photo de profil (Thumbnail).
+ * 3. Preuves de conteneurs en liens cliquables textuels (bleu).
+ * 4. Calcul total argent (Brique 17500$ / Pochon 315$).
  * ==============================================================================
  */
 
@@ -62,7 +63,7 @@ process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reaso
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V10 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V11 Connecté : ${client.user.tag}`);
     client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
 });
 
@@ -125,15 +126,20 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
             collector.on('collect', async (msg) => {
                 const attachment = msg.attachments.first();
-                data.conteneur_links.push(attachment.url);
-                
                 const logC = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_CONTENEUR);
+                
                 if (logC) {
+                    // Sauvegarde permanente dans les logs avant suppression
                     const logEmb = new EmbedBuilder().setTitle(`📦 CONTENEUR : ${data.name}`).setImage(attachment.url).setColor(CONFIG.COLORS.CRITICAL);
-                    await logC.send({ embeds: [logEmb] });
+                    const savedLog = await logC.send({ embeds: [logEmb] });
+                    // On stocke l'URL du log qui ne sera pas supprimé
+                    data.conteneur_links.push(savedLog.embeds[0].image.url);
+                } else {
+                    data.conteneur_links.push(attachment.url);
                 }
+
                 if (msg.deletable) await msg.delete().catch(() => {});
-                await interaction.followUp({ content: "✅ Photo enregistrée.", ephemeral: true });
+                await interaction.followUp({ content: "✅ Photo enregistrée et sécurisée.", ephemeral: true });
                 try { await interaction.message.edit({ embeds: [buildFarmEmbed(interaction.user, data)] }); } catch(e) {}
             });
         }
@@ -192,46 +198,46 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 function getRows() {
-    const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_btn_sale').setLabel('Argent Sale').setStyle(ButtonStyle.Primary).setEmoji('💰'),
-        new ButtonBuilder().setCustomId('farm_btn_brique').setLabel('Brique').setStyle(ButtonStyle.Primary).setEmoji('📦'),
-        new ButtonBuilder().setCustomId('farm_btn_pochon').setLabel('Pochon').setStyle(ButtonStyle.Primary).setEmoji('🌿')
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_btn_speedo').setLabel('Speedo').setStyle(ButtonStyle.Success).setEmoji('🧪'),
-        new ButtonBuilder().setCustomId('farm_btn_recel').setLabel('Recel').setStyle(ButtonStyle.Success).setEmoji('🔌'),
-        new ButtonBuilder().setCustomId('farm_action_conteneur').setLabel('Conteneur').setStyle(ButtonStyle.Danger).setEmoji('📥')
-    );
-    const row3 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('farm_action_finish').setLabel('Terminer').setStyle(ButtonStyle.Secondary).setEmoji('📁')
-    );
-    return [row1, row2, row3];
+    return [
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('farm_btn_sale').setLabel('Argent Sale').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+            new ButtonBuilder().setCustomId('farm_btn_brique').setLabel('Brique').setStyle(ButtonStyle.Primary).setEmoji('📦'),
+            new ButtonBuilder().setCustomId('farm_btn_pochon').setLabel('Pochon').setStyle(ButtonStyle.Primary).setEmoji('🌿')
+        ),
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('farm_btn_speedo').setLabel('Speedo').setStyle(ButtonStyle.Success).setEmoji('🧪'),
+            new ButtonBuilder().setCustomId('farm_btn_recel').setLabel('Recel').setStyle(ButtonStyle.Success).setEmoji('🔌'),
+            new ButtonBuilder().setCustomId('farm_action_conteneur').setLabel('Conteneur').setStyle(ButtonStyle.Danger).setEmoji('📥')
+        ),
+        new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('farm_action_finish').setLabel('Terminer').setStyle(ButtonStyle.Secondary).setEmoji('📁')
+        )
+    ];
 }
 
 function buildFarmEmbed(user, data) {
     const totalArgent = (data.brique * CONFIG.PRICES.BRIQUE) + (data.pochon * CONFIG.PRICES.POCHON);
     
-    // Génération des liens "Preuve" cliquables en bleu (Markdown)
+    // Rendu des preuves en format Markdown (Textes bleus cliquables)
     const listPreuves = data.conteneur_links.length > 0 
         ? data.conteneur_links.map((url, i) => `[Preuve ${i + 1}](${url})`).join(' | ') 
         : '*Aucune preuve*';
 
-    const fields = [
+    const lines = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
         `📦 **Briques de weed :** \`${data.brique}\``,
         `🌿 **Pochons de weed :** \`${data.pochon}\``,
         `🧪 **Speedo Acide :** \`${data.speedo}\``,
         `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
         `📥 **Conteneurs :** \`${data.conteneur_links.length}\``,
-        `${listPreuves}`, // Affichage des liens en bleu juste en dessous
+        `${listPreuves}`,
         `💵 **TOTAL ARGENT :** \`${totalArgent.toLocaleString()}$\``
     ];
 
     return new EmbedBuilder()
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
-        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${fields.join('\n')}\n------------------------------------------`)
+        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${lines.join('\n')}\n------------------------------------------`)
         .setColor(CONFIG.COLORS.NEUTRAL)
-        // Thumbnail supprimé ici
         .setFooter({ text: `Gestionnaire : ${user.username}` });
 }
 
