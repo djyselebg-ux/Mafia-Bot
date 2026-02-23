@@ -28,7 +28,7 @@ const TARIFS = {
     "Cigarette contrebande": 400, "Alcool contrebande": 400
 };
 
-// --- INTERFACE BOUTONS ---
+// --- INTERFACE BOUTONS (Go Fast supprimé) ---
 const getButtons = () => [
     new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('btn_argent_sale').setLabel('💸 Argent Sale').setStyle(ButtonStyle.Danger),
@@ -41,12 +41,11 @@ const getButtons = () => [
         new ButtonBuilder().setCustomId('btn_conteneur').setLabel('📦 Conteneur').setStyle(ButtonStyle.Secondary)
     ),
     new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('btn_modifier').setLabel('🛠️ MODIFIER').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId('btn_gofast').setLabel('🚗 Go Fast').setStyle(ButtonStyle.Primary)
+        new ButtonBuilder().setCustomId('btn_modifier').setLabel('🛠️ MODIFIER').setStyle(ButtonStyle.Secondary)
     )
 ];
 
-// --- GENERATION DE L'EMBED AVEC LIENS BLEUS ---
+// --- GENERATION DE L'EMBED ---
 function generateEmbed(cid) {
     const data = accounts[cid];
     let total = 0;
@@ -55,14 +54,12 @@ function generateEmbed(cid) {
     data.details.forEach((item) => {
         if (item.type === 'conteneur') {
             const p = (TARIFS[item.nom] || 0) * item.qty;
-            // ICI : Création du texte bleu cliquable si une photo existe
             const lienPhoto = item.photo ? ` — [**Preuve 🖼️**](${item.photo})` : "";
-            
             details += `📦 **${item.qty_cont} Boîte(s)** (${item.qty}x ${item.nom})${lienPhoto} : \`${p}$\`\n`;
             total += p;
         } else {
-            const em = { argent_sale: '💸', brique_weed: '🌿', pochon_weed: '🍃', speedo_acide: '🧪', recel: '💰', gofast: '🚗' };
-            details += `${em[item.type] || '🔹'} **${item.type.toUpperCase()}** : \`${item.montant}$\`\n`;
+            const em = { argent_sale: '💸', brique_weed: '🌿', pochon_weed: '🍃', speedo_acide: '🧪', recel: '💰' };
+            details += `${em[item.type] || '🔹'} **${item.type.toUpperCase().replace('_', ' ')}** : \`${item.montant}$\`\n`;
             total += item.montant;
         }
     });
@@ -70,7 +67,7 @@ function generateEmbed(cid) {
     return new EmbedBuilder()
         .setColor('#2b2d31')
         .setTitle(`💼 SESSION : ${data.nom_orga.toUpperCase()}`)
-        .setDescription(`━━━━━━━━━━━━━━━━━━━━━━━━━━\n${details || "*Aucune donnée*"}\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 **TOTAL : ${total}$**\n━━━━━━━━━━━━━━━━━━━━━━━━━━`)
+        .setDescription(`━━━━━━━━━━━━━━━━━━━━━━━━━━\n${details || "*Aucune donnée enregistrée*"}\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n💰 **TOTAL : ${total}$**\n━━━━━━━━━━━━━━━━━━━━━━━━━━`)
         .setFooter({ text: "Les Rejetés - Cliquez sur 'Preuve' pour voir l'image" });
 }
 
@@ -86,11 +83,11 @@ client.on('messageCreate', async message => {
             qty_cont: temp.nb, 
             nom: temp.nom, 
             qty: temp.qty, 
-            photo: message.attachments.first().url // On stocke l'URL de l'image
+            photo: message.attachments.first().url 
         });
 
         waitingPhoto.delete(message.author.id);
-        await message.delete(); // On nettoie le salon
+        await message.delete().catch(() => {}); 
 
         const main = (await message.channel.messages.fetch({ limit: 10 })).find(m => m.embeds[0]?.title?.includes("SESSION :"));
         if (main) await main.edit({ embeds: [generateEmbed(cid)], components: getButtons() });
@@ -120,24 +117,24 @@ client.on('interactionCreate', async i => {
 
         if (i.customId === 'btn_modifier') {
             const data = accounts[cid];
-            if (!data?.details.length) return i.reply({ content: "Vide.", ephemeral: true });
+            if (!data?.details.length) return i.reply({ content: "Aucune saisie à modifier.", ephemeral: true });
             const btns = data.details.slice(-4).reverse().map((d) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`del_${data.details.indexOf(d)}`).setLabel(`Suppr. ${d.nom || d.type}`).setStyle(ButtonStyle.Danger)));
-            return i.reply({ content: "🛠️ Correction :", components: btns, ephemeral: true });
+            return i.reply({ content: "🛠️ Quel élément souhaitez-vous supprimer ?", components: btns, ephemeral: true });
         }
 
         if (i.customId.startsWith('del_')) {
             const idx = parseInt(i.customId.split('_')[1]);
             accounts[cid].details.splice(idx, 1);
-            await i.update({ content: "✅ Supprimé.", components: [], ephemeral: true });
+            await i.update({ content: "✅ Saisie supprimée.", components: [], ephemeral: true });
             const main = (await i.channel.messages.fetch({ limit: 10 })).find(m => m.embeds[0]?.title?.includes("SESSION :"));
             if (main) await main.edit({ embeds: [generateEmbed(cid)], components: getButtons() });
             return;
         }
 
         const cat = i.customId.replace('btn_', '');
-        if (['argent_sale', 'brique_weed', 'pochon_weed', 'speedo_acide', 'recel', 'gofast'].includes(cat)) {
-            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Saisie ${cat}`);
-            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant ($)').setStyle(TextInputStyle.Short)));
+        if (['argent_sale', 'brique_weed', 'pochon_weed', 'speedo_acide', 'recel'].includes(cat)) {
+            const m = new ModalBuilder().setCustomId(`modal_${cat}`).setTitle(`Saisie ${cat.replace('_', ' ')}`);
+            m.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('arg').setLabel('Montant total ($)').setStyle(TextInputStyle.Short)));
             return await i.showModal(m);
         }
     }
@@ -152,7 +149,7 @@ client.on('interactionCreate', async i => {
                 nom: rawNom, 
                 qty: i.fields.getTextInputValue('qty') 
             });
-            return i.reply({ content: "📸 **Envoie la photo du loot maintenant.**", ephemeral: true });
+            return i.reply({ content: "📸 **Envoie la photo du loot maintenant dans ce salon.**", ephemeral: true });
         }
         const cat = i.customId.replace('modal_', '');
         accounts[cid].details.push({ type: cat, montant: parseInt(i.fields.getTextInputValue('arg')) || 0 });
