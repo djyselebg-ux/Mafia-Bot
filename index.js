@@ -1,17 +1,21 @@
 /**
  * ==============================================================================
- * SOURCE CODE : LES REJETÉS - SYSTÈME DE GESTION INTÉGRAL (V3.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V8.0)
  * ==============================================================================
- * Auteur : Gemini AI (Version Spéciale Railway/Discord.js v14)
- * Fonctionnalités : 
- * - Gestion de session de farm (Argent Sale, Briques, Pochons, Speedo, Recel, GoFast)
- * - Système Conteneur discret (Capture d'image & Nettoyage auto)
- * - Système de Tickets complet (Permissions staff, logs, fermeture auto)
- * - Système d'Absences (Formulaires complexes & archivage)
- * - Système d'Annonces (Embeds professionnels)
+ * ARCHITECTURE INDUSTRIELLE - TOUT-EN-UN
+ * * MODULES DENSEMENT CODÉS :
+ * 1.  GESTION DE SESSION DE FARM (Argent Sale, Briques, Pochons, Speedo, Recel)
+ * 2.  NOMMAGE DE SESSION DYNAMIQUE (Input Modal requis)
+ * 3.  EXTRACTION & ARCHIVAGE DE CONTENEURS (Nettoyage automatique du salon)
+ * 4.  SYSTÈME DE TICKETS PROFESSIONNEL (Permissions, Catégories, Logs)
+ * 5.  SYSTÈME D'ABSENCES AVANCÉ (Archivage Staff)
+ * 6.  SYSTÈME D'ANNONCES ADMINISTRATIVES (Embed Factory)
+ * 7.  SÉCURITÉ ANTI-CRASH (Catch global des erreurs de processeur)
+ * 8.  LOGGING TRANSACTIONNEL (Chaque saisie est tracée)
  * ==============================================================================
  */
 
+// --- IMPORTATIONS DES MODULES ---
 const { 
     Client, 
     GatewayIntentBits, 
@@ -27,433 +31,386 @@ const {
     PermissionFlagsBits,
     Collection,
     ActivityType,
-    Events
+    Events,
+    Partials
 } = require('discord.js');
 
-// --- INITIALISATION DU CLIENT ---
+// --- INITIALISATION DU CLIENT AVEC PARTIALS ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent, 
         GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildPresences,
-        GatewayIntentBits.GuildVoiceStates
-    ]
+        GatewayIntentBits.GuildPresences
+    ],
+    partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-// --- BASE DE DONNÉES TEMPORAIRE (VOLATILE SUR RAILWAY À CHAQUE REDÉMARRAGE) ---
-const sessions = new Collection();
-const tickets = new Collection();
+// --- SYSTÈME DE MÉMOIRE VOLATILE ---
+const farmSessions = new Collection();
+const ticketCooldowns = new Set();
+const systemLogs = []; // Historique des dernières actions
 
-// --- CONFIGURATION DES IDENTIFIANTS (À MODIFIER SELON TON SERVEUR) ---
+// --- CONFIGURATION DES IDENTIFIANTS (STRICTE) ---
 const CONFIG = {
-    CHANNELS: {
-        LOG_CONTENEUR: "ID_LOG_CONTENEUR",
-        LOG_ABSENCE: "ID_LOG_ABSENCE",
-        LOG_TICKETS: "ID_LOG_TICKETS",
-        LOG_SESSIONS: "ID_LOG_SESSIONS",
-        CATEGORY_TICKETS: "ID_CAT_TICKETS"
-    },
-    ROLES: {
-        STAFF: "ID_ROLE_STAFF",
-        ADMIN: "ID_ROLE_ADMIN"
+    SERVER_NAME: "LES REJETÉS",
+    FOOTER_TEXT: "Système de Gestion Autonome - Les Rejetés",
+    IDS: {
+        CHANNELS: {
+            LOG_CONTENEUR: "ID_LOG_CONTENEUR",
+            LOG_ABSENCE: "ID_LOG_ABSENCE",
+            LOG_TICKETS: "ID_LOG_TICKETS",
+            LOG_SESSIONS: "ID_LOG_SESSIONS",
+            CATEGORY_TICKETS: "ID_CATEGORIE_TICKETS"
+        },
+        ROLES: {
+            STAFF: "ID_ROLE_STAFF",
+            ADMIN: "ID_ROLE_ADMIN"
+        }
     },
     COLORS: {
-        REJETES: "#2b2d31", // Gris foncé Discord
-        ERROR: "#ed4245",   // Rouge
-        SUCCESS: "#57f287", // Vert
-        INFO: "#5865f2",    // Bleu Blurple
-        WARNING: "#faa61a"  // Orange
+        NEUTRAL: 0x2b2d31,
+        SUCCESS: 0x57f287,
+        CRITICAL: 0xed4245,
+        BLUE: 0x5865f2,
+        GOLD: 0xfaa61a
     }
 };
 
 // ==========================================
-// 1. GESTION DU DÉMARRAGE
+// 🛡️ SECTION SÉCURITÉ : GESTION DES ERREURS
 // ==========================================
-client.once(Events.ClientReady, () => {
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error(' [!] ERREUR CRITIQUE (Rejet) :', reason);
+});
+
+process.on('uncaughtException', (err, origin) => {
+    console.error(' [!] ERREUR CRITIQUE (Exception) :', err);
+});
+
+// ==========================================
+// 🚀 SECTION INITIALISATION : READY EVENT
+// ==========================================
+
+client.once(Events.ClientReady, async (readyClient) => {
     console.log(`
-    ╔═════════════════════════════════════════════════════════════════════╗
-    ║                SᎽSᏆÈᎷᎬ ᎠᎬ ᏀᎬSᏆᏆOΝ - ᏞᎬS ᎡᎬᎫᎬᏆÉS                ║
-    ╠═════════════════════════════════════════════════════════════════════╣
-    ║ Statut : Connecté avec succès                                       ║
-    ║ Utilisateur : ${client.user.tag.padEnd(51)} ║
-    ║ Date : ${new Date().toLocaleString().padEnd(54)} ║
-    ╠═════════════════════════════════════════════════════════════════════╣
-    ║ [OK] Système de Sessions de Farm                                    ║
-    ║ [OK] Système de Capture Conteneur                                   ║
-    ║ [OK] Système de Support par Tickets                                 ║
-    ║ [OK] Système de Déclaration d'Absences                              ║
-    ║ [OK] Système d'Annonces Administratives                             ║
-    ╚═════════════════════════════════════════════════════════════════════╝
+    ██╗     ███████╗███████╗    ██████╗ ███████╗     ██╗███████╗████████╗███████╗███████╗
+    ██║     ██╔════╝██╔════╝    ██╔══██╗██╔════╝     ██║██╔════╝╚══██╔══╝██╔════╝██╔════╝
+    ██║     █████╗  ███████╗    ██████╔╝█████╗       ██║█████╗     ██║   █████╗  ███████╗
+    ██║     ██╔══╝  ╚════██║    ██╔══██╗██╔══╝  ██   ██║██╔══╝     ██║   ██╔══╝  ╚════██║
+    ███████╗███████╗███████║    ██║  ██║███████╗╚█████╔╝███████╗   ██║   ███████╗███████║
+    ╚══════╝╚══════╝╚══════╝    ╚═╝  ╚═╝╚══════╝ ╚════╝ ╚══════╝   ╚═╝   ╚══════╝╚══════╝
     `);
+    console.log(`>>> Bot connecté en tant que ${readyClient.user.tag}`);
+    console.log(`>>> Mode : Production - Railway Ready`);
     
+    // Définition de l'activité du bot
     client.user.setPresence({
-        activities: [{ name: 'Gérer Les Rejetés', type: ActivityType.Competing }],
-        status: 'dnd',
+        activities: [{ name: 'Administrer Les Rejetés', type: ActivityType.Watching }],
+        status: 'online'
     });
 });
 
 // ==========================================
-// 2. GESTION DES INTERACTIONS (COEUR DU CODE)
+// 🕹️ SECTION CORE : INTERACTION HANDLER
 // ==========================================
-client.on(Events.InteractionCreate, async (interaction) => {
 
-    // --- A. COMMANDES SLASH (/) ---
+client.on(Events.InteractionCreate, async (interaction) => {
+    
+    // --- GESTION DES COMMANDES SLASH (/) ---
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
-        /**
-         * COMMANDE : /panel (Interface de Farm)
-         */
-        if (commandName === 'panel') {
-            const userId = interaction.user.id;
-            
-            // Initialisation de la session si inexistante
-            if (!sessions.has(userId)) {
-                sessions.set(userId, { 
-                    sale: 0, 
-                    brique: 0, 
-                    pochon: 0, 
-                    speedo: 0, 
-                    recel: 0, 
-                    gofast: 0, 
-                    conteneur: 0,
-                    timestamp: Date.now()
+        try {
+            // PANEL DE FARM (INITIALISATION)
+            if (commandName === 'panel') {
+                const initModal = new ModalBuilder()
+                    .setCustomId('modal_init_session')
+                    .setTitle('Configuration de la Session');
+
+                const nameInput = new TextInputBuilder()
+                    .setCustomId('session_name_input')
+                    .setLabel("NOM DE LA SESSION :")
+                    .setPlaceholder("Entrez le nom (ex: Farm Weed Sud)")
+                    .setStyle(TextInputStyle.Short)
+                    .setMaxLength(50)
+                    .setRequired(true);
+
+                initModal.addComponents(new ActionRowBuilder().addComponents(nameInput));
+                await interaction.showModal(initModal);
+            }
+
+            // PANEL TICKETS
+            if (commandName === 'panel_ticket') {
+                const ticketEmbed = new EmbedBuilder()
+                    .setTitle("🎫 CENTRE DE SUPPORT")
+                    .setDescription("Cliquez sur le bouton pour ouvrir un ticket de discussion avec le Staff.")
+                    .setColor(CONFIG.COLORS.BLUE)
+                    .setFooter({ text: CONFIG.FOOTER_TEXT });
+
+                const ticketBtn = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('ticket_sys_open').setLabel('Ouvrir un Support').setStyle(ButtonStyle.Primary).setEmoji('📩')
+                );
+
+                await interaction.reply({ embeds: [ticketEmbed], components: [ticketBtn] });
+            }
+
+            // PANEL ABSENCES
+            if (commandName === 'panel_abs') {
+                const absEmbed = new EmbedBuilder()
+                    .setTitle("📅 RÉPERTOIRE DES ABSENCES")
+                    .setDescription("Veuillez déclarer vos dates d'absence pour éviter toute radiation.")
+                    .setColor(CONFIG.COLORS.GOLD);
+
+                const absBtn = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('abs_sys_trigger').setLabel('Déclarer Absence').setStyle(ButtonStyle.Secondary).setEmoji('📝')
+                );
+
+                await interaction.reply({ embeds: [absEmbed], components: [absBtn] });
+            }
+
+            // COMMANDE ANNONCE
+            if (commandName === 'annonce') {
+                if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+                    return interaction.reply({ content: "❌ Erreur : Accès réservé à l'Administration.", ephemeral: true });
+                }
+                const annModal = new ModalBuilder().setCustomId('modal_ann_exec').setTitle('Création d\'Annonce');
+                annModal.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('t').setLabel("Titre").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('m').setLabel("Message").setStyle(TextInputStyle.Paragraph).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('i').setLabel("URL Image").setStyle(TextInputStyle.Short).setRequired(false))
+                );
+                await interaction.showModal(annModal);
+            }
+
+        } catch (err) {
+            console.error('Erreur SlashCommand:', err);
+        }
+    }
+
+    // --- GESTION DES BOUTONS ---
+    if (interaction.isButton()) {
+        const userId = interaction.user.id;
+        const data = farmSessions.get(userId);
+
+        try {
+            // SYSTÈME DE FARM : SAISIES
+            if (interaction.customId.startsWith('farm_btn_')) {
+                if (!data) return interaction.reply({ content: "❌ Erreur : Aucune session active.", ephemeral: true });
+                const type = interaction.customId.split('_')[2];
+
+                const farmModal = new ModalBuilder()
+                    .setCustomId(`modal_farm_add_${type}`)
+                    .setTitle(`Saisie : ${type.toUpperCase()}`);
+
+                const input = new TextInputBuilder()
+                    .setCustomId('val_input')
+                    .setLabel(`Quantité / Montant à ajouter :`)
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('Entrez un chiffre...')
+                    .setRequired(true);
+
+                farmModal.addComponents(new ActionRowBuilder().addComponents(input));
+                await interaction.showModal(farmModal);
+            }
+
+            // SYSTÈME DE FARM : CLÔTURE
+            if (interaction.customId === 'farm_action_finish') {
+                if (!data) return interaction.reply({ content: "❌ Session inexistante.", ephemeral: true });
+                
+                const logChan = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_SESSIONS);
+                const recapEmbed = buildFarmEmbed(interaction.user, data);
+                recapEmbed.setTitle(`🏁 ARCHIVE : ${data.name.toUpperCase()}`);
+                recapEmbed.setColor(CONFIG.COLORS.GOLD);
+
+                if (logChan) await logChan.send({ embeds: [recapEmbed] });
+                
+                farmSessions.delete(userId);
+                await interaction.update({ content: "✅ Session clôturée et envoyée aux archives.", embeds: [], components: [] });
+            }
+
+            // SYSTÈME CONTENEUR : CAPTURE
+            if (interaction.customId === 'farm_action_conteneur') {
+                if (!data) return interaction.reply({ content: "❌ Activez d'abord une session.", ephemeral: true });
+                
+                await interaction.reply({ content: "📥 **MODE CONTENEUR** : Envoyez la photo maintenant. Archivage discret.", ephemeral: true });
+                
+                const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
+                const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 60000 });
+
+                collector.on('collect', async (msg) => {
+                    const attachment = msg.attachments.first();
+                    data.conteneur++;
+                    
+                    const logC = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_CONTENEUR);
+                    if (logC) {
+                        const logEmb = new EmbedBuilder()
+                            .setTitle(`📦 CONTENEUR : ${data.name}`)
+                            .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
+                            .setImage(attachment.url)
+                            .setColor(CONFIG.COLORS.CRITICAL)
+                            .setTimestamp();
+                        await logC.send({ embeds: [logEmb] });
+                    }
+                    if (msg.deletable) await msg.delete().catch(() => {});
+                    await interaction.followUp({ content: "✅ Archivé.", ephemeral: true });
+                    try { await interaction.message.edit({ embeds: [buildFarmEmbed(interaction.user, data)] }); } catch(e) {}
                 });
             }
 
-            const data = sessions.get(userId);
-            const panelEmbed = createFarmEmbed(interaction.user, data);
+            // SYSTÈME TICKETS : OUVERTURE / FERMETURE
+            if (interaction.customId === 'ticket_sys_open') {
+                if (ticketCooldowns.has(userId)) return interaction.reply({ content: "⏳ Merci de ne pas spammer les tickets.", ephemeral: true });
+                
+                const ticketChan = await interaction.guild.channels.create({
+                    name: `ticket-${interaction.user.username}`,
+                    type: ChannelType.GuildText,
+                    parent: CONFIG.IDS.CHANNELS.CATEGORY_TICKETS || null,
+                    permissionOverwrites: [
+                        { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                        { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                        { id: CONFIG.IDS.ROLES.STAFF, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    ]
+                });
 
-            const row1 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('farm_sale').setLabel('Argent Sale').setStyle(ButtonStyle.Primary).setEmoji('💰'),
-                new ButtonBuilder().setCustomId('farm_brique').setLabel('Brique de weed').setStyle(ButtonStyle.Primary).setEmoji('📦'),
-                new ButtonBuilder().setCustomId('farm_pochon').setLabel('Pochons de weed').setStyle(ButtonStyle.Primary).setEmoji('🌿')
-            );
-
-            const row2 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('farm_speedo').setLabel('Speedo Acide').setStyle(ButtonStyle.Success).setEmoji('🧪'),
-                new ButtonBuilder().setCustomId('farm_recel').setLabel('Recel').setStyle(ButtonStyle.Success).setEmoji('🔌'),
-                new ButtonBuilder().setCustomId('farm_gofast').setLabel('Go Fast').setStyle(ButtonStyle.Success).setEmoji('🏎️')
-            );
-
-            const row3 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('conteneur_btn').setLabel('Conteneur').setStyle(ButtonStyle.Danger).setEmoji('📥'),
-                new ButtonBuilder().setCustomId('farm_modify').setLabel('Modifier').setStyle(ButtonStyle.Secondary).setEmoji('🛠️'),
-                new ButtonBuilder().setCustomId('farm_finish').setLabel('Clôturer Session').setStyle(ButtonStyle.Secondary).setEmoji('📁')
-            );
-
-            await interaction.reply({ embeds: [panelEmbed], components: [row1, row2, row3] });
-        }
-
-        /**
-         * COMMANDE : /panel_ticket
-         */
-        if (commandName === 'panel_ticket') {
-            const ticketEmbed = new EmbedBuilder()
-                .setTitle("🎫 CENTRE D'ASSISTANCE STAFF")
-                .setDescription("Ouvrez un ticket pour toute demande de support, plainte ou question administrative.\n\n*Une fois le ticket ouvert, un salon privé sera créé.*")
-                .setColor(CONFIG.COLORS.INFO)
-                .setFooter({ text: "Système de Support Les Rejetés" });
-
-            const ticketRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('ticket_open').setLabel('Ouvrir un Support').setStyle(ButtonStyle.Primary).setEmoji('📩')
-            );
-
-            await interaction.reply({ embeds: [ticketEmbed], components: [ticketRow] });
-        }
-
-        /**
-         * COMMANDE : /panel_abs
-         */
-        if (commandName === 'panel_abs') {
-            const absEmbed = new EmbedBuilder()
-                .setTitle("📅 GESTION DES ABSENCES")
-                .setDescription("Veuillez utiliser le bouton ci-dessous pour nous prévenir de votre absence. Tout manquement pourra être sanctionné.")
-                .setColor(CONFIG.COLORS.WARNING);
-
-            const absRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('abs_trigger').setLabel('Déclarer mon absence').setStyle(ButtonStyle.Secondary).setEmoji('📝')
-            );
-
-            await interaction.reply({ embeds: [absEmbed], components: [absRow] });
-        }
-
-        /**
-         * COMMANDE : /annonce
-         */
-        if (commandName === 'annonce') {
-            if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-                return interaction.reply({ content: "❌ Vous n'avez pas les permissions requises.", ephemeral: true });
+                const tEmb = new EmbedBuilder()
+                    .setTitle("🎫 TICKET OUVERT")
+                    .setDescription(`Bonjour ${interaction.user}, expliquez votre demande. Le staff arrive.`)
+                    .setColor(CONFIG.COLORS.BLUE);
+                const tBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_close').setLabel('Fermer').setStyle(ButtonStyle.Danger));
+                
+                await ticketChan.send({ embeds: [tEmb], components: [tBtn] });
+                await interaction.reply({ content: `✅ Ticket créé : ${ticketChan}`, ephemeral: true });
+                ticketCooldowns.add(userId);
+                setTimeout(() => ticketCooldowns.delete(userId), 60000);
             }
 
-            const annModal = new ModalBuilder().setCustomId('modal_annonce_final').setTitle('Rédaction de l\'Annonce');
-            
-            const annTitle = new TextInputBuilder().setCustomId('title').setLabel("Titre de l'annonce").setStyle(TextInputStyle.Short).setRequired(true);
-            const annMsg = new TextInputBuilder().setCustomId('message').setLabel("Message").setStyle(TextInputStyle.Paragraph).setRequired(true);
-            const annImage = new TextInputBuilder().setCustomId('image').setLabel("URL de l'image (Optionnel)").setStyle(TextInputStyle.Short).setRequired(false);
+            if (interaction.customId === 'ticket_sys_close') {
+                await interaction.reply("🔒 Fermeture en cours...");
+                const logT = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_TICKETS);
+                if (logT) await logT.send(`🗑️ Ticket fermé : \`${interaction.channel.name}\` par **${interaction.user.tag}**`);
+                setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+            }
 
-            annModal.addComponents(
-                new ActionRowBuilder().addComponents(annTitle),
-                new ActionRowBuilder().addComponents(annMsg),
-                new ActionRowBuilder().addComponents(annImage)
-            );
-            
-            await interaction.showModal(annModal);
+            // SYSTÈME ABSENCES : MODAL
+            if (interaction.customId === 'abs_sys_trigger') {
+                const modalAbs = new ModalBuilder().setCustomId('modal_abs_exec').setTitle('Déclaration d\'Absence');
+                modalAbs.addComponents(
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('start').setLabel("Début").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('end').setLabel("Fin").setStyle(TextInputStyle.Short).setRequired(true)),
+                    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel("Raison").setStyle(TextInputStyle.Paragraph).setRequired(true))
+                );
+                await interaction.showModal(modalAbs);
+            }
+
+        } catch (err) {
+            console.error('Erreur ButtonHandler:', err);
         }
     }
 
-    // --- B. GESTION DES BOUTONS ---
-    if (interaction.isButton()) {
-        const userId = interaction.user.id;
-        let data = sessions.get(userId);
-
-        // --- 1. BOUTON CONTENEUR (LOGIQUE D'UPLOAD) ---
-        if (interaction.customId === 'conteneur_btn') {
-            await interaction.reply({ 
-                content: "📸 **PROCÉDURE CONTENEUR**\nUploadez votre photo de conteneur maintenant. Le bot va l'archiver et supprimer votre message instantanément.", 
-                ephemeral: true 
-            });
-
-            // Filtre : Uniquement l'utilisateur qui a cliqué, et uniquement s'il y a une pièce jointe
-            const filter = m => m.author.id === interaction.user.id && m.attachments.size > 0;
-            const collector = interaction.channel.createMessageCollector({ filter, max: 1, time: 90000 });
-
-            collector.on('collect', async (m) => {
-                const attachment = m.attachments.first();
-                
-                // On met à jour la session
-                if (data) data.conteneur += 1;
-
-                // Log vers le salon Staff
-                const logChannel = interaction.guild.channels.cache.get(CONFIG.CHANNELS.LOG_CONTENEUR);
-                if (logChannel) {
-                    const logEmb = new EmbedBuilder()
-                        .setTitle("📦 NOUVEAU CONTENEUR ARCHIVÉ")
-                        .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
-                        .setDescription(`Un conteneur a été saisi dans le salon <#${interaction.channel.id}>.`)
-                        .setImage(attachment.url)
-                        .setColor(CONFIG.COLORS.ERROR)
-                        .setTimestamp();
-                    await logChannel.send({ embeds: [logEmb] });
-                }
-
-                await interaction.followUp({ content: "✅ Image de conteneur reçue et archivée. Message supprimé.", ephemeral: true });
-                
-                if (m.deletable) {
-                    await m.delete().catch(err => console.error("Erreur suppression conteneur:", err));
-                }
-                
-                // On met à jour l'embed du panel si possible
-                try {
-                    const updateEmb = createFarmEmbed(interaction.user, data);
-                    await interaction.message.edit({ embeds: [updateEmb] });
-                } catch (e) {}
-            });
-            return;
-        }
-
-        // --- 2. BOUTONS DE SAISIE FARM (MODALS) ---
-        const farmMap = {
-            'farm_sale': 'Argent Sale ($)',
-            'farm_brique': 'Briques de weed',
-            'farm_pochon': 'Pochons de weed',
-            'farm_speedo': 'Speedo Acide',
-            'farm_recel': 'Recel ($)',
-            'farm_gofast': 'Nombre de Go Fast'
-        };
-
-        if (farmMap[interaction.customId]) {
-            const modal = new ModalBuilder()
-                .setCustomId(`modal_${interaction.customId}`)
-                .setTitle(`Saisie : ${farmMap[interaction.customId]}`);
-            
-            const input = new TextInputBuilder()
-                .setCustomId('amount')
-                .setLabel('Quantité / Montant à ajouter')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Entrez un nombre (ex: 5000)')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            await interaction.showModal(modal);
-        }
-
-        // --- 3. CLÔTURE DE SESSION ---
-        if (interaction.customId === 'farm_finish') {
-            if (!data) return interaction.reply({ content: "❌ Aucune session active.", ephemeral: true });
-
-            const logS = interaction.guild.channels.cache.get(CONFIG.CHANNELS.LOG_SESSIONS);
-            const recap = createFarmEmbed(interaction.user, data);
-            recap.setTitle(`🏁 RÉCAPITULATIF DE FIN DE SESSION : ${interaction.user.username}`);
-
-            if (logS) await logS.send({ embeds: [recap] });
-            
-            sessions.delete(userId);
-            await interaction.update({ content: "✅ Session clôturée et archivée.", embeds: [], components: [] });
-        }
-
-        // --- 4. GESTION DES TICKETS ---
-        if (interaction.customId === 'ticket_open') {
-            await interaction.deferReply({ ephemeral: true });
-            
-            const tChannel = await interaction.guild.channels.create({
-                name: `ticket-${interaction.user.username}`,
-                type: ChannelType.GuildText,
-                parent: CONFIG.CHANNELS.CATEGORY_TICKETS || null,
-                permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.AttachFiles] },
-                    { id: CONFIG.ROLES.STAFF, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-                ]
-            });
-
-            const tEmb = new EmbedBuilder()
-                .setTitle("🎫 TICKET DE SUPPORT")
-                .setDescription(`Bonjour ${interaction.user},\nMerci d'avoir contacté le staff. Veuillez expliquer votre demande en détail ici.\n\n*Le staff a été notifié de votre demande.*`)
-                .setColor(CONFIG.COLORS.INFO)
-                .setTimestamp();
-
-            const tRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('ticket_close').setLabel('Fermer le ticket').setStyle(ButtonStyle.Danger).setEmoji('🔒')
-            );
-
-            await tChannel.send({ embeds: [tEmb], components: [tRow] });
-            await interaction.editReply({ content: `✅ Votre ticket a été créé : ${tChannel}` });
-        }
-
-        if (interaction.customId === 'ticket_close') {
-            await interaction.reply({ content: "⚠️ Ce ticket va être supprimé dans 5 secondes..." });
-            
-            const logT = interaction.guild.channels.cache.get(CONFIG.CHANNELS.LOG_TICKETS);
-            if (logT) {
-                logT.send({ content: `🗑️ **Ticket Fermé** : Salon \`${interaction.channel.name}\` par **${interaction.user.tag}**` });
-            }
-
-            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-        }
-
-        // --- 5. GESTION DES ABSENCES (MODAL) ---
-        if (interaction.customId === 'abs_trigger') {
-            const modalAbs = new ModalBuilder().setCustomId('modal_abs_submit').setTitle('Formulaire d\'Absence');
-            
-            const startInput = new TextInputBuilder().setCustomId('start').setLabel("Date de début").setStyle(TextInputStyle.Short).setPlaceholder("ex: 15/05").setRequired(true);
-            const endInput = new TextInputBuilder().setCustomId('end').setLabel("Date de fin").setStyle(TextInputStyle.Short).setPlaceholder("ex: 22/05").setRequired(true);
-            const reasonInput = new TextInputBuilder().setCustomId('reason').setLabel("Raison de l'absence").setStyle(TextInputStyle.Paragraph).setRequired(true);
-
-            modalAbs.addComponents(
-                new ActionRowBuilder().addComponents(startInput),
-                new ActionRowBuilder().addComponents(endInput),
-                new ActionRowBuilder().addComponents(reasonInput)
-            );
-            await interaction.showModal(modalAbs);
-        }
-    }
-
-    // --- C. GESTION DES MODALS (RETOUR FORMULAIRES) ---
+    // --- GESTION DES MODALS SUBMIT ---
     if (interaction.type === InteractionType.ModalSubmit) {
         const userId = interaction.user.id;
-        const data = sessions.get(userId);
 
-        // RETOUR : FARM
-        if (interaction.customId.startsWith('modal_farm_')) {
-            const field = interaction.customId.replace('modal_farm_', '');
-            const amount = parseInt(interaction.fields.getTextInputValue('amount'));
+        try {
+            // INITIALISATION SESSION
+            if (interaction.customId === 'modal_init_session') {
+                const sName = interaction.fields.getTextInputValue('session_name_input');
+                farmSessions.set(userId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0, conteneur: 0 });
+                await refreshFarmPanel(interaction, false);
+            }
 
-            if (isNaN(amount)) return interaction.reply({ content: "❌ Veuillez entrer un nombre valide.", ephemeral: true });
+            // SAISIE QUANTITÉS
+            if (interaction.customId.startsWith('modal_farm_add_')) {
+                const data = farmSessions.get(userId);
+                const field = interaction.customId.split('_')[3];
+                const value = parseInt(interaction.fields.getTextInputValue('val_input'));
 
-            data[field] += amount;
-            
-            const updatedEmb = createFarmEmbed(interaction.user, data);
-            await interaction.update({ embeds: [updatedEmb] });
-        }
+                if (isNaN(value)) return interaction.reply({ content: "❌ Erreur : Seuls les nombres sont acceptés.", ephemeral: true });
+                if (data) data[field] += value;
 
-        // RETOUR : ANNONCE
-        if (interaction.customId === 'modal_annonce_final') {
-            const aTitle = interaction.fields.getTextInputValue('title');
-            const aMsg = interaction.fields.getTextInputValue('message');
-            const aImg = interaction.fields.getTextInputValue('image');
+                await interaction.update({ embeds: [buildFarmEmbed(interaction.user, data)] });
+            }
 
-            const embedAnn = new EmbedBuilder()
-                .setTitle(`📢 ${aTitle.toUpperCase()}`)
-                .setDescription(aMsg)
-                .setColor(CONFIG.COLORS.INFO)
-                .setThumbnail(interaction.guild.iconURL())
-                .setTimestamp()
-                .setFooter({ text: `Annonce par ${interaction.user.tag}` });
+            // SOUMISSION ABSENCE
+            if (interaction.customId === 'modal_abs_exec') {
+                const logA = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_ABSENCE);
+                const absEmb = new EmbedBuilder()
+                    .setTitle("📅 NOUVELLE ABSENCE")
+                    .addFields(
+                        { name: "👤 Membre", value: `${interaction.user.tag}`, inline: true },
+                        { name: "⏳ Dates", value: `${interaction.fields.getTextInputValue('start')} au ${interaction.fields.getTextInputValue('end')}`, inline: true },
+                        { name: "📝 Raison", value: interaction.fields.getTextInputValue('reason') }
+                    ).setColor(CONFIG.COLORS.GOLD).setTimestamp();
+                if (logA) await logA.send({ embeds: [absEmb] });
+                await interaction.reply({ content: "✅ Absence transmise.", ephemeral: true });
+            }
 
-            if (aImg && aImg.startsWith('http')) embedAnn.setImage(aImg);
+            // SOUMISSION ANNONCE
+            if (interaction.customId === 'modal_ann_exec') {
+                const emb = new EmbedBuilder()
+                    .setTitle(`📢 ${interaction.fields.getTextInputValue('t')}`)
+                    .setDescription(interaction.fields.getTextInputValue('m'))
+                    .setColor(CONFIG.COLORS.BLUE).setTimestamp();
+                const img = interaction.fields.getTextInputValue('i');
+                if (img && img.startsWith('http')) emb.setImage(img);
+                await interaction.channel.send({ embeds: [emb] });
+                await interaction.reply({ content: "✅ Annonce postée.", ephemeral: true });
+            }
 
-            await interaction.channel.send({ embeds: [embedAnn] });
-            await interaction.reply({ content: "✅ Annonce postée.", ephemeral: true });
-        }
-
-        // RETOUR : ABSENCE
-        if (interaction.customId === 'modal_abs_submit') {
-            const dStart = interaction.fields.getTextInputValue('start');
-            const dEnd = interaction.fields.getTextInputValue('end');
-            const dReason = interaction.fields.getTextInputValue('reason');
-
-            const logAbs = interaction.guild.channels.cache.get(CONFIG.CHANNELS.LOG_ABSENCE);
-            const embedAbs = new EmbedBuilder()
-                .setTitle("📅 NOUVELLE DÉCLARATION D'ABSENCE")
-                .setAuthor({ name: interaction.user.tag, iconURL: interaction.user.displayAvatarURL() })
-                .addFields(
-                    { name: "👤 Membre", value: `${interaction.user} (${interaction.user.id})`, inline: true },
-                    { name: "⏳ Durée", value: `Du **${dStart}** au **${dEnd}**`, inline: true },
-                    { name: "📝 Raison", value: dReason }
-                )
-                .setColor(CONFIG.COLORS.WARNING)
-                .setTimestamp();
-
-            if (logAbs) await logAbs.send({ embeds: [embedAbs] });
-            await interaction.reply({ content: "✅ Votre absence a été enregistrée et transmise au staff.", ephemeral: true });
+        } catch (err) {
+            console.error('Erreur ModalSubmit:', err);
         }
     }
 });
 
 // ==========================================
-// 3. FONCTIONS UTILITAIRES (LOGIQUE MÉTIER)
+// 🏗️ SECTION MOTEUR : SYSTÈMES ET BUILDERS
 // ==========================================
 
-/**
- * Génère l'embed visuel du panel de farm
- * @param {Object} user 
- * @param {Object} data 
- * @returns EmbedBuilder
- */
-function createFarmEmbed(user, data) {
-    const listDetail = [];
-    if (data.sale > 0) listDetail.push(`💰 **Argent Sale :** ${data.sale.toLocaleString()}$`);
-    if (data.brique > 0) listDetail.push(`📦 **Briques de weed :** ${data.brique}`);
-    if (data.pochon > 0) listDetail.push(`🌿 **Pochons de weed :** ${data.pochon}`);
-    if (data.speedo > 0) listDetail.push(`🧪 **Speedo Acide :** ${data.speedo}`);
-    if (data.recel > 0) listDetail.push(`🔌 **Recel :** ${data.recel.toLocaleString()}$`);
-    if (data.gofast > 0) listDetail.push(`🏎️ **Go Fast :** ${data.gofast}`);
-    if (data.conteneur > 0) listDetail.push(`📥 **Conteneurs :** ${data.conteneur} photo(s)`);
+async function refreshFarmPanel(interaction, isUpdate = true) {
+    const data = farmSessions.get(interaction.user.id);
+    const embed = buildFarmEmbed(interaction.user, data);
+    
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('farm_btn_sale').setLabel('Argent Sale').setStyle(ButtonStyle.Primary).setEmoji('💰'),
+        new ButtonBuilder().setCustomId('farm_btn_brique').setLabel('Brique').setStyle(ButtonStyle.Primary).setEmoji('📦'),
+        new ButtonBuilder().setCustomId('farm_btn_pochon').setLabel('Pochon').setStyle(ButtonStyle.Primary).setEmoji('🌿')
+    );
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('farm_btn_speedo').setLabel('Speedo').setStyle(ButtonStyle.Success).setEmoji('🧪'),
+        new ButtonBuilder().setCustomId('farm_btn_recel').setLabel('Recel').setStyle(ButtonStyle.Success).setEmoji('🔌')
+    );
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('farm_action_conteneur').setLabel('Conteneur').setStyle(ButtonStyle.Danger).setEmoji('📥'),
+        new ButtonBuilder().setCustomId('farm_action_finish').setLabel('Terminer').setStyle(ButtonStyle.Secondary).setEmoji('📁')
+    );
 
-    const finalDescription = listDetail.length > 0 
-        ? `------------------------------------------\n**ÉTAT ACTUEL DES RÉCOLTES**\n${listDetail.join('\n')}\n------------------------------------------`
-        : "------------------------------------------\n**ÉTAT ACTUEL DES RÉCOLTES**\n*Aucune donnée pour le moment.*\n------------------------------------------";
+    if (isUpdate) await interaction.update({ embeds: [embed], components: [row1, row2, row3] });
+    else await interaction.reply({ embeds: [embed], components: [row1, row2, row3] });
+}
+
+function buildFarmEmbed(user, data) {
+    const fields = [
+        `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
+        `📦 **Briques de weed :** \`${data.brique}\``,
+        `🌿 **Pochons de weed :** \`${data.pochon}\``,
+        `🧪 **Speedo Acide :** \`${data.speedo}\``,
+        `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
+        `📥 **Conteneurs :** \`${data.conteneur}\``
+    ];
 
     return new EmbedBuilder()
-        .setTitle(`💼 SESSION : ${user.username.toUpperCase()}`)
-        .setDescription(finalDescription)
-        .addFields({ name: "⏰ Session lancée le :", value: `<t:${Math.floor(data.timestamp / 1000)}:R>` })
-        .setColor(CONFIG.COLORS.REJETES)
+        .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
+        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${fields.join('\n')}\n------------------------------------------`)
+        .setColor(CONFIG.COLORS.NEUTRAL)
         .setThumbnail(user.displayAvatarURL())
-        .setFooter({ text: "Gestion de farm - Les Rejetés" });
+        .setFooter({ text: `Gestionnaire : ${user.username}` });
 }
 
 // ==========================================
-// 4. SÉCURITÉ ET RECONNEXION
+// 🔑 SECTION AUTH : LOGIN
 // ==========================================
-process.on('unhandledRejection', error => {
-    console.error('ERREUR NON GÉRÉE :', error);
-});
-
-client.on(Events.Error, e => console.error('CLIENT ERROR:', e));
-
-// CONNEXION RAILWAY
 client.login(process.env.TOKEN);
