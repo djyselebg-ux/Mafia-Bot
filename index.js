@@ -1,11 +1,12 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V12.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V13.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. Suppression TOTALE du module Conteneur.
- * 2. Maintien du calcul total argent (Brique 17500$ / Pochon 315$).
- * 3. Maintien du nom de session personnalisé et suppression Thumbnail.
+ * 1. Accès restreint au rôle COMPTA pour /panel.
+ * 2. Sessions liées au SALON (Multi-utilisateurs autorisés).
+ * 3. Maintien du calcul total (17500$ / 315$).
+ * 4. Aucune photo de profil, pas de conteneur.
  * ==============================================================================
  */
 
@@ -38,6 +39,7 @@ const client = new Client({
     partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
+// Session liée à l'ID du salon pour permettre le multi-utilisateur
 const farmSessions = new Collection();
 const ticketCooldowns = new Set();
 
@@ -51,7 +53,11 @@ const CONFIG = {
             LOG_SESSIONS: "ID_LOG_SESSIONS",
             CATEGORY_TICKETS: "ID_CATEGORIE_TICKETS"
         },
-        ROLES: { STAFF: "ID_ROLE_STAFF", ADMIN: "ID_ROLE_ADMIN" }
+        ROLES: { 
+            STAFF: "ID_ROLE_STAFF", 
+            ADMIN: "ID_ROLE_ADMIN",
+            COMPTA: "ID_ROLE_COMPTA" // ID du rôle autorisé
+        }
     },
     COLORS: { NEUTRAL: 0x2b2d31, SUCCESS: 0x57f287, CRITICAL: 0xed4245, BLUE: 0x5865f2, GOLD: 0xfaa61a }
 };
@@ -61,17 +67,22 @@ process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reaso
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V12 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V13 Connecté : ${client.user.tag}`);
     client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
     
+    // Vérification globale du rôle COMPTA pour toute interaction de farm
+    const isCompta = interaction.member.roles.cache.has(CONFIG.IDS.ROLES.COMPTA);
+
     // --- COMMANDES SLASH ---
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
         if (commandName === 'panel') {
+            if (!isCompta) return interaction.reply({ content: "❌ Accès réservé au rôle **Compta**.", ephemeral: true });
+
             const initModal = new ModalBuilder().setCustomId('modal_init_session').setTitle('Configuration de la Session');
             initModal.addComponents(new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('session_name_input').setLabel("NOM DE LA SESSION :").setStyle(TextInputStyle.Short).setRequired(true)
@@ -94,11 +105,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // --- GESTION DES BOUTONS ---
     if (interaction.isButton()) {
-        const userId = interaction.user.id;
-        const data = farmSessions.get(userId);
+        const sessionId = interaction.channelId; // On récupère la session du salon
+        const data = farmSessions.get(sessionId);
+
+        if (interaction.customId.startsWith('farm_btn_') || interaction.customId === 'farm_action_finish') {
+            // Seuls les Compta peuvent cliquer
+            if (!isCompta) return interaction.reply({ content: "❌ Seul un membre **Compta** peut modifier ce panel.", ephemeral: true });
+        }
 
         if (interaction.customId.startsWith('farm_btn_')) {
-            if (!data) return interaction.reply({ content: "❌ Aucune session active.", ephemeral: true });
+            if (!data) return interaction.reply({ content: "❌ Aucune session active dans ce salon.", ephemeral: true });
             const type = interaction.customId.split('_')[2];
             const farmModal = new ModalBuilder().setCustomId(`modal_farm_add_${type}`).setTitle(`Saisie : ${type.toUpperCase()}`);
             farmModal.addComponents(new ActionRowBuilder().addComponents(
@@ -111,10 +127,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
             if (!data) return interaction.reply({ content: "❌ Session inexistante.", ephemeral: true });
             const logChan = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_SESSIONS);
             if (logChan) await logChan.send({ embeds: [buildFarmEmbed(interaction.user, data).setTitle(`🏁 ARCHIVE : ${data.name.toUpperCase()}`)] });
-            farmSessions.delete(userId);
+            farmSessions.delete(sessionId);
             await interaction.update({ content: "✅ Session clôturée.", embeds: [], components: [] });
         }
 
+        // Système Ticket / Absence (Libre accès)
         if (interaction.customId === 'ticket_sys_open') {
             const ticketChan = await interaction.guild.channels.create({
                 name: `ticket-${interaction.user.username}`,
@@ -149,17 +166,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     // --- MODALS SUBMIT ---
     if (interaction.type === InteractionType.ModalSubmit) {
-        const userId = interaction.user.id;
+        const sessionId = interaction.channelId;
 
         if (interaction.customId === 'modal_init_session') {
             const sName = interaction.fields.getTextInputValue('session_name_input');
-            farmSessions.set(userId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 });
-            const data = farmSessions.get(userId);
+            farmSessions.set(sessionId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 });
+            const data = farmSessions.get(sessionId);
             await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
         }
 
         if (interaction.customId.startsWith('modal_farm_add_')) {
-            const data = farmSessions.get(userId);
+            const data = farmSessions.get(sessionId);
             const field = interaction.customId.split('_')[3];
             const value = parseInt(interaction.fields.getTextInputValue('val_input'));
             if (!isNaN(value) && data) data[field] += value;
@@ -199,7 +216,7 @@ function buildFarmEmbed(user, data) {
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
         .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${lines.join('\n')}\n------------------------------------------`)
         .setColor(CONFIG.COLORS.NEUTRAL)
-        .setFooter({ text: `Gestionnaire : ${user.username}` });
+        .setFooter({ text: `Dernière modification par : ${user.username}` });
 }
 
 client.login(process.env.TOKEN);
