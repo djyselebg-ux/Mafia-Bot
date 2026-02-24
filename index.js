@@ -1,11 +1,12 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V15.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V17.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. Affichage intégral en $ (conversion auto des quantités en valeur monétaire).
- * 2. Accès restreint aux rôles COMPTABILITÉ (1475156397187661987) & HAUT GRADÉ (1475156249220878469).
- * 3. Sessions partagées par SALON.
+ * 1. SUPPRESSION DES CALCULS AUTO : Toutes les saisies sont en $ direct.
+ * 2. TOTAL ARGENT : Somme simple de Brique + Pochon + Speedo (en $).
+ * 3. Accès restreint : COMPTABILITÉ & HAUT GRADÉ.
+ * 4. Sessions partagées par SALON.
  * ==============================================================================
  */
 
@@ -36,7 +37,7 @@ const client = new Client({
 const farmSessions = new Collection();
 
 const CONFIG = {
-    PRICES: { BRIQUE: 17500, POCHON: 315 },
+    SERVER_NAME: "LES REJETÉS",
     IDS: {
         CHANNELS: {
             LOG_ABSENCE: "ID_LOG_ABSENCE",
@@ -56,7 +57,7 @@ process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reaso
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V15 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V17 Connecté : ${client.user.tag}`);
     client.user.setActivity('Compta Les Rejetés', { type: ActivityType.Watching });
 });
 
@@ -75,12 +76,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             ));
             await interaction.showModal(initModal);
         }
-
-        // Panels Annexes
-        if (interaction.commandName === 'panel_ticket') {
-            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_open').setLabel('Ouvrir Support').setStyle(ButtonStyle.Primary));
-            await interaction.reply({ embeds: [new EmbedBuilder().setTitle("🎫 SUPPORT").setColor(CONFIG.COLORS.BLUE)], components: [row] });
-        }
     }
 
     if (interaction.isButton()) {
@@ -94,11 +89,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
         if (interaction.customId.startsWith('farm_btn_')) {
             if (!data) return interaction.reply({ content: "❌ Aucune session active ici.", ephemeral: true });
             const type = interaction.customId.split('_')[2];
-            const label = (type === 'sale' || type === 'recel') ? "Montant en $" : "Quantité (unités)";
             
             const farmModal = new ModalBuilder().setCustomId(`modal_farm_add_${type}`).setTitle(`Ajouter : ${type.toUpperCase()}`);
             farmModal.addComponents(new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('val_input').setLabel(label).setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('val_input').setLabel("Montant en $ à ajouter :").setStyle(TextInputStyle.Short).setRequired(true)
             ));
             await interaction.showModal(farmModal);
         }
@@ -108,17 +102,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const logChan = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_SESSIONS);
             if (logChan) await logChan.send({ embeds: [buildFarmEmbed(interaction.user, data).setTitle(`🏁 ARCHIVE : ${data.name.toUpperCase()}`)] });
             farmSessions.delete(sessionId);
-            await interaction.update({ content: "✅ Session clôturée.", embeds: [], components: [] });
-        }
-
-        // Logic Tickets/Absences...
-        if (interaction.customId === 'ticket_sys_open') {
-            const ticketChan = await interaction.guild.channels.create({
-                name: `ticket-${interaction.user.username}`,
-                parent: CONFIG.IDS.CHANNELS.CATEGORY_TICKETS,
-                permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }]
-            });
-            await interaction.reply({ content: `✅ Ticket : ${ticketChan}`, ephemeral: true });
+            await interaction.update({ content: "✅ Session clôturée et archivée.", embeds: [], components: [] });
         }
     }
 
@@ -157,16 +141,14 @@ function getRows() {
 }
 
 function buildFarmEmbed(user, data) {
-    // Calculs de conversion
-    const briqueCash = data.brique * CONFIG.PRICES.BRIQUE;
-    const pochonCash = data.pochon * CONFIG.PRICES.POCHON;
-    const totalCash = briqueCash + pochonCash;
+    // Le total est simplement la somme des valeurs déjà saisies en $
+    const totalCash = data.brique + data.pochon + data.speedo;
     
     const lines = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
-        `📦 **Briques (Valeur) :** \`${briqueCash.toLocaleString()}$\``,
-        `🌿 **Pochons (Valeur) :** \`${pochonCash.toLocaleString()}$\``,
-        `🧪 **Speedo Acide :** \`${data.speedo}\``,
+        `📦 **Briques ($) :** \`${data.brique.toLocaleString()}$\``,
+        `🌿 **Pochons ($) :** \`${data.pochon.toLocaleString()}$\``,
+        `🧪 **Speedo ($) :** \`${data.speedo.toLocaleString()}$\``,
         `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
         `💵 **TOTAL ARGENT :** \`${totalCash.toLocaleString()}$\``
     ];
@@ -175,7 +157,7 @@ function buildFarmEmbed(user, data) {
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
         .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES ($)**\n${lines.join('\n')}\n------------------------------------------`)
         .setColor(CONFIG.COLORS.NEUTRAL)
-        .setFooter({ text: `Modifié par : ${user.username}` });
+        .setFooter({ text: `Dernière modification : ${user.username}` });
 }
 
 client.login(process.env.TOKEN);
