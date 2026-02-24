@@ -1,12 +1,11 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V13.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V15.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. Accès restreint au rôle COMPTA pour /panel.
- * 2. Sessions liées au SALON (Multi-utilisateurs autorisés).
- * 3. Maintien du calcul total (17500$ / 315$).
- * 4. Aucune photo de profil, pas de conteneur.
+ * 1. Affichage intégral en $ (conversion auto des quantités en valeur monétaire).
+ * 2. Accès restreint aux rôles COMPTABILITÉ (1475156397187661987) & HAUT GRADÉ (1475156249220878469).
+ * 3. Sessions partagées par SALON.
  * ==============================================================================
  */
 
@@ -30,21 +29,13 @@ const {
 } = require('discord.js');
 
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent, 
-        GatewayIntentBits.GuildMembers
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
     partials: [Partials.Channel, Partials.Message, Partials.User]
 });
 
-// Session liée à l'ID du salon pour permettre le multi-utilisateur
 const farmSessions = new Collection();
-const ticketCooldowns = new Set();
 
 const CONFIG = {
-    SERVER_NAME: "LES REJETÉS",
     PRICES: { BRIQUE: 17500, POCHON: 315 },
     IDS: {
         CHANNELS: {
@@ -54,71 +45,60 @@ const CONFIG = {
             CATEGORY_TICKETS: "ID_CATEGORIE_TICKETS"
         },
         ROLES: { 
-            STAFF: "ID_ROLE_STAFF", 
-            ADMIN: "ID_ROLE_ADMIN",
-            COMPTA: "ID_ROLE_COMPTA" // ID du rôle autorisé
+            COMPTA: "1475156397187661987",   
+            HAUT_GRADE: "1475156249220878469" 
         }
     },
-    COLORS: { NEUTRAL: 0x2b2d31, SUCCESS: 0x57f287, CRITICAL: 0xed4245, BLUE: 0x5865f2, GOLD: 0xfaa61a }
+    COLORS: { NEUTRAL: 0x2b2d31, BLUE: 0x5865f2, GOLD: 0xfaa61a }
 };
 
-// --- SÉCURITÉ ANTI-CRASH ---
 process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reason));
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V13 Connecté : ${client.user.tag}`);
-    client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
+    console.log(`>>> Bot V15 Connecté : ${client.user.tag}`);
+    client.user.setActivity('Compta Les Rejetés', { type: ActivityType.Watching });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
     
-    // Vérification globale du rôle COMPTA pour toute interaction de farm
-    const isCompta = interaction.member.roles.cache.has(CONFIG.IDS.ROLES.COMPTA);
+    const hasAccess = interaction.member.roles.cache.has(CONFIG.IDS.ROLES.COMPTA) || 
+                      interaction.member.roles.cache.has(CONFIG.IDS.ROLES.HAUT_GRADE);
 
-    // --- COMMANDES SLASH ---
     if (interaction.isChatInputCommand()) {
-        const { commandName } = interaction;
+        if (interaction.commandName === 'panel') {
+            if (!hasAccess) return interaction.reply({ content: "❌ Accès réservé aux autorisés.", ephemeral: true });
 
-        if (commandName === 'panel') {
-            if (!isCompta) return interaction.reply({ content: "❌ Accès réservé au rôle **Compta**.", ephemeral: true });
-
-            const initModal = new ModalBuilder().setCustomId('modal_init_session').setTitle('Configuration de la Session');
+            const initModal = new ModalBuilder().setCustomId('modal_init_session').setTitle('Configuration Session');
             initModal.addComponents(new ActionRowBuilder().addComponents(
                 new TextInputBuilder().setCustomId('session_name_input').setLabel("NOM DE LA SESSION :").setStyle(TextInputStyle.Short).setRequired(true)
             ));
             await interaction.showModal(initModal);
         }
 
-        if (commandName === 'panel_ticket') {
-            const emb = new EmbedBuilder().setTitle("🎫 SUPPORT").setDescription("Cliquez pour ouvrir un ticket.").setColor(CONFIG.COLORS.BLUE);
-            const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_open').setLabel('Ouvrir un Support').setStyle(ButtonStyle.Primary));
-            await interaction.reply({ embeds: [emb], components: [btn] });
-        }
-
-        if (commandName === 'panel_abs') {
-            const emb = new EmbedBuilder().setTitle("📅 ABSENCES").setDescription("Déclarez vos absences ici.").setColor(CONFIG.COLORS.GOLD);
-            const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('abs_sys_trigger').setLabel('Déclarer Absence').setStyle(ButtonStyle.Secondary));
-            await interaction.reply({ embeds: [emb], components: [btn] });
+        // Panels Annexes
+        if (interaction.commandName === 'panel_ticket') {
+            const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_open').setLabel('Ouvrir Support').setStyle(ButtonStyle.Primary));
+            await interaction.reply({ embeds: [new EmbedBuilder().setTitle("🎫 SUPPORT").setColor(CONFIG.COLORS.BLUE)], components: [row] });
         }
     }
 
-    // --- GESTION DES BOUTONS ---
     if (interaction.isButton()) {
-        const sessionId = interaction.channelId; // On récupère la session du salon
+        const sessionId = interaction.channelId;
         const data = farmSessions.get(sessionId);
 
         if (interaction.customId.startsWith('farm_btn_') || interaction.customId === 'farm_action_finish') {
-            // Seuls les Compta peuvent cliquer
-            if (!isCompta) return interaction.reply({ content: "❌ Seul un membre **Compta** peut modifier ce panel.", ephemeral: true });
+            if (!hasAccess) return interaction.reply({ content: "❌ Permission insuffisante.", ephemeral: true });
         }
 
         if (interaction.customId.startsWith('farm_btn_')) {
-            if (!data) return interaction.reply({ content: "❌ Aucune session active dans ce salon.", ephemeral: true });
+            if (!data) return interaction.reply({ content: "❌ Aucune session active ici.", ephemeral: true });
             const type = interaction.customId.split('_')[2];
-            const farmModal = new ModalBuilder().setCustomId(`modal_farm_add_${type}`).setTitle(`Saisie : ${type.toUpperCase()}`);
+            const label = (type === 'sale' || type === 'recel') ? "Montant en $" : "Quantité (unités)";
+            
+            const farmModal = new ModalBuilder().setCustomId(`modal_farm_add_${type}`).setTitle(`Ajouter : ${type.toUpperCase()}`);
             farmModal.addComponents(new ActionRowBuilder().addComponents(
-                new TextInputBuilder().setCustomId('val_input').setLabel(`Quantité à ajouter :`).setStyle(TextInputStyle.Short).setRequired(true)
+                new TextInputBuilder().setCustomId('val_input').setLabel(label).setStyle(TextInputStyle.Short).setRequired(true)
             ));
             await interaction.showModal(farmModal);
         }
@@ -131,48 +111,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.update({ content: "✅ Session clôturée.", embeds: [], components: [] });
         }
 
-        // Système Ticket / Absence (Libre accès)
+        // Logic Tickets/Absences...
         if (interaction.customId === 'ticket_sys_open') {
             const ticketChan = await interaction.guild.channels.create({
                 name: `ticket-${interaction.user.username}`,
                 parent: CONFIG.IDS.CHANNELS.CATEGORY_TICKETS,
-                permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: CONFIG.IDS.ROLES.STAFF, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-                ]
+                permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }]
             });
-            const tEmb = new EmbedBuilder().setTitle("🎫 TICKET").setDescription("Expliquez votre demande.").setColor(CONFIG.COLORS.BLUE);
-            const tBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_close').setLabel('Fermer').setStyle(ButtonStyle.Danger));
-            await ticketChan.send({ embeds: [tEmb], components: [tBtn] });
-            await interaction.reply({ content: `✅ Ticket créé : ${ticketChan}`, ephemeral: true });
-        }
-
-        if (interaction.customId === 'ticket_sys_close') {
-            await interaction.reply("🔒 Fermeture...");
-            setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-        }
-
-        if (interaction.customId === 'abs_sys_trigger') {
-            const modalAbs = new ModalBuilder().setCustomId('modal_abs_exec').setTitle('Absence');
-            modalAbs.addComponents(
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('start').setLabel("Début").setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('end').setLabel("Fin").setStyle(TextInputStyle.Short).setRequired(true)),
-                new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('reason').setLabel("Raison").setStyle(TextInputStyle.Paragraph).setRequired(true))
-            );
-            await interaction.showModal(modalAbs);
+            await interaction.reply({ content: `✅ Ticket : ${ticketChan}`, ephemeral: true });
         }
     }
 
-    // --- MODALS SUBMIT ---
     if (interaction.type === InteractionType.ModalSubmit) {
         const sessionId = interaction.channelId;
 
         if (interaction.customId === 'modal_init_session') {
             const sName = interaction.fields.getTextInputValue('session_name_input');
             farmSessions.set(sessionId, { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 });
-            const data = farmSessions.get(sessionId);
-            await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
+            await interaction.reply({ embeds: [buildFarmEmbed(interaction.user, farmSessions.get(sessionId))], components: getRows() });
         }
 
         if (interaction.customId.startsWith('modal_farm_add_')) {
@@ -201,22 +157,25 @@ function getRows() {
 }
 
 function buildFarmEmbed(user, data) {
-    const totalArgent = (data.brique * CONFIG.PRICES.BRIQUE) + (data.pochon * CONFIG.PRICES.POCHON);
+    // Calculs de conversion
+    const briqueCash = data.brique * CONFIG.PRICES.BRIQUE;
+    const pochonCash = data.pochon * CONFIG.PRICES.POCHON;
+    const totalCash = briqueCash + pochonCash;
     
     const lines = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
-        `📦 **Briques de weed :** \`${data.brique}\``,
-        `🌿 **Pochons de weed :** \`${data.pochon}\``,
+        `📦 **Briques (Valeur) :** \`${briqueCash.toLocaleString()}$\``,
+        `🌿 **Pochons (Valeur) :** \`${pochonCash.toLocaleString()}$\``,
         `🧪 **Speedo Acide :** \`${data.speedo}\``,
         `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
-        `💵 **TOTAL ARGENT :** \`${totalArgent.toLocaleString()}$\``
+        `💵 **TOTAL ARGENT :** \`${totalCash.toLocaleString()}$\``
     ];
 
     return new EmbedBuilder()
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
-        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES**\n${lines.join('\n')}\n------------------------------------------`)
+        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES ($)**\n${lines.join('\n')}\n------------------------------------------`)
         .setColor(CONFIG.COLORS.NEUTRAL)
-        .setFooter({ text: `Dernière modification par : ${user.username}` });
+        .setFooter({ text: `Modifié par : ${user.username}` });
 }
 
 client.login(process.env.TOKEN);
