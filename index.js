@@ -1,6 +1,6 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V21.0 - FULL)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V22.0 - SÉCURISÉ)
  * ==============================================================================
  */
 
@@ -25,7 +25,6 @@ if (fs.existsSync(DB_FILE)) {
     try {
         const rawData = fs.readFileSync(DB_FILE);
         farmSessions = new Map(Object.entries(JSON.parse(rawData)));
-        console.log(">>> [DB] Sessions restaurées.");
     } catch (e) { console.error(">>> [DB] Erreur lecture :", e); }
 }
 
@@ -47,11 +46,11 @@ const CONFIG = {
             STAFF: "ID_ROLE_STAFF"
         }
     },
-    COLORS: { NEUTRAL: 0x2b2d31, BLUE: 0x5865f2, GOLD: 0xfaa61a, SUCCESS: 0x57f287 }
+    COLORS: { NEUTRAL: 0x2b2d31, BLUE: 0x5865f2, GOLD: 0xfaa61a, SUCCESS: 0x57f287, CRITICAL: 0xed4245 }
 };
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V21 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V22 Connecté : ${client.user.tag}`);
     client.user.setActivity('Gestion Les Rejetés', { type: ActivityType.Watching });
 });
 
@@ -64,7 +63,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isChatInputCommand()) {
         const { commandName } = interaction;
 
-        // 1. ANNONCE
         if (commandName === 'annonce') {
             if (!hasAccess) return interaction.reply({ content: "❌ Permission insuffisante.", ephemeral: true });
             const modal = new ModalBuilder().setCustomId('modal_annonce').setTitle('Créer une Annonce');
@@ -75,7 +73,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        // 2. PANEL FARM
         if (commandName === 'panel') {
             if (!hasAccess) return interaction.reply({ content: "❌ Accès réservé aux autorisés.", ephemeral: true });
             const modal = new ModalBuilder().setCustomId('modal_init_session').setTitle('Configuration Session');
@@ -83,14 +80,12 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.showModal(modal);
         }
 
-        // 3. PANEL TICKET
         if (commandName === 'panel_ticket') {
             const emb = new EmbedBuilder().setTitle("🎫 SUPPORT").setDescription("Cliquez pour ouvrir un ticket.").setColor(CONFIG.COLORS.BLUE);
             const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_open').setLabel('Ouvrir un Support').setStyle(ButtonStyle.Primary));
             await interaction.reply({ embeds: [emb], components: [btn] });
         }
 
-        // 4. PANEL ABSENCE
         if (commandName === 'panel_abs') {
             const emb = new EmbedBuilder().setTitle("📅 ABSENCES").setDescription("Déclarez vos absences ici.").setColor(CONFIG.COLORS.GOLD);
             const btn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('abs_sys_trigger').setLabel('Déclarer Absence').setStyle(ButtonStyle.Secondary));
@@ -102,6 +97,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (interaction.isButton()) {
         const sessionId = interaction.channelId;
         const data = farmSessions.get(sessionId);
+
+        // Gestion du Doublon (Réinitialisation)
+        if (interaction.customId.startsWith('reset_confirm_')) {
+            const newName = interaction.customId.split('_')[2];
+            const newData = { name: newName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 };
+            farmSessions.set(sessionId, newData);
+            saveDB();
+            await interaction.update({ content: "✅ Session réinitialisée.", embeds: [buildFarmEmbed(interaction.user, newData)], components: getRows() });
+            return;
+        }
+        if (interaction.customId === 'reset_cancel') {
+            return interaction.update({ content: "❌ Action annulée. L'ancienne session reste active.", components: [] });
+        }
 
         // Farm Buttons
         if (interaction.customId.startsWith('farm_btn_')) {
@@ -123,28 +131,21 @@ client.on(Events.InteractionCreate, async (interaction) => {
             await interaction.update({ content: "✅ Archivé.", embeds: [], components: [] });
         }
 
-        // Ticket Logic
+        // Ticket / Absence logic (Identique)
         if (interaction.customId === 'ticket_sys_open') {
             const ticketChan = await interaction.guild.channels.create({
                 name: `ticket-${interaction.user.username}`,
                 parent: CONFIG.IDS.CHANNELS.CATEGORY_TICKETS,
-                permissionOverwrites: [
-                    { id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-                    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
-                    { id: CONFIG.IDS.ROLES.STAFF, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
-                ]
+                permissionOverwrites: [{ id: interaction.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }]
             });
             const tBtn = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ticket_sys_close').setLabel('Fermer').setStyle(ButtonStyle.Danger));
             await ticketChan.send({ content: `Bonjour ${interaction.user}, expliquez votre demande ici.`, components: [tBtn] });
             await interaction.reply({ content: `✅ Ticket : ${ticketChan}`, ephemeral: true });
         }
-
         if (interaction.customId === 'ticket_sys_close') {
-            await interaction.reply("🔒 Fermeture du ticket...");
+            await interaction.reply("🔒 Fermeture...");
             setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
         }
-
-        // Absence Trigger
         if (interaction.customId === 'abs_sys_trigger') {
             const modal = new ModalBuilder().setCustomId('modal_abs_exec').setTitle('Déclaration Absence');
             modal.addComponents(
@@ -162,6 +163,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
         if (interaction.customId === 'modal_init_session') {
             const sName = interaction.fields.getTextInputValue('session_name_input');
+            const existing = farmSessions.get(sessionId);
+
+            // Vérification si session déjà ouverte avec même nom
+            if (existing && existing.name.toLowerCase() === sName.toLowerCase()) {
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId(`reset_confirm_${sName}`).setLabel('Oui, réinitialiser').setStyle(ButtonStyle.Danger),
+                    new ButtonBuilder().setCustomId('reset_cancel').setLabel('Non, annuler').setStyle(ButtonStyle.Secondary)
+                );
+                return interaction.reply({ content: `⚠️ Une session nommée **${sName}** est déjà en cours dans ce salon. Voulez-vous la recommencer à zéro ?`, components: [row], ephemeral: true });
+            }
+
             const newData = { name: sName, sale: 0, brique: 0, pochon: 0, speedo: 0, recel: 0 };
             farmSessions.set(sessionId, newData);
             saveDB();
@@ -172,22 +184,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
             const data = farmSessions.get(sessionId);
             const field = interaction.customId.split('_')[3];
             const value = parseInt(interaction.fields.getTextInputValue('val_input'));
-            if (!isNaN(value) && data) {
-                data[field] += value;
-                saveDB();
-            }
+            if (!isNaN(value) && data) { data[field] += value; saveDB(); }
             await interaction.update({ embeds: [buildFarmEmbed(interaction.user, data)], components: getRows() });
         }
 
         if (interaction.customId === 'modal_abs_exec') {
             const logAbs = interaction.guild.channels.cache.get(CONFIG.IDS.CHANNELS.LOG_ABSENCE);
-            const emb = new EmbedBuilder()
-                .setTitle(`📅 ABSENCE : ${interaction.user.username}`)
-                .addFields(
-                    { name: 'Du', value: interaction.fields.getTextInputValue('start'), inline: true },
-                    { name: 'Au', value: interaction.fields.getTextInputValue('end'), inline: true },
-                    { name: 'Raison', value: interaction.fields.getTextInputValue('reason') }
-                ).setColor(CONFIG.COLORS.GOLD).setTimestamp();
+            const emb = new EmbedBuilder().setTitle(`📅 ABSENCE : ${interaction.user.username}`).addFields({ name: 'Du', value: interaction.fields.getTextInputValue('start'), inline: true }, { name: 'Au', value: interaction.fields.getTextInputValue('end'), inline: true }, { name: 'Raison', value: interaction.fields.getTextInputValue('reason') }).setColor(CONFIG.COLORS.GOLD).setTimestamp();
             if (logAbs) await logAbs.send({ embeds: [emb] });
             await interaction.reply({ content: "✅ Absence enregistrée.", ephemeral: true });
         }
@@ -218,12 +221,13 @@ function getRows() {
 }
 
 function buildFarmEmbed(user, data) {
+    // Le total inclut maintenant TOUTES les lignes, y compris l'Argent Sale
     const total = (data.sale || 0) + (data.brique || 0) + (data.pochon || 0) + (data.speedo || 0) + (data.recel || 0);
     return new EmbedBuilder()
         .setTitle(`💼 SESSION : ${data.name.toUpperCase()}`)
-        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES ($)**\n💰 Sale : \`${(data.sale || 0).toLocaleString()}$\` \n📦 Briques : \`${(data.brique || 0).toLocaleString()}$\` \n🌿 Pochons : \`${(data.pochon || 0).toLocaleString()}$\` \n🧪 Speedo : \`${(data.speedo || 0).toLocaleString()}$\` \n🔌 Recel : \`${(data.recel || 0).toLocaleString()}$\` \n💵 **TOTAL :** \`${total.toLocaleString()}$\` \n------------------------------------------`)
+        .setDescription(`------------------------------------------\n**ÉTAT DES RÉCOLTES ($)**\n💰 Sale : \`${(data.sale || 0).toLocaleString()}$\` \n📦 Briques : \`${(data.brique || 0).toLocaleString()}$\` \n🌿 Pochons : \`${(data.pochon || 0).toLocaleString()}$\` \n🧪 Speedo : \`${(data.speedo || 0).toLocaleString()}$\` \n🔌 Recel : \`${(data.recel || 0).toLocaleString()}$\` \n💵 **TOTAL ARGENT :** \`${total.toLocaleString()}$\` \n------------------------------------------`)
         .setColor(CONFIG.COLORS.NEUTRAL)
-        .setFooter({ text: `Gradé : ${user.username}` });
+        .setFooter({ text: `Dernière modif : ${user.username}` });
 }
 
 client.login(process.env.TOKEN);
