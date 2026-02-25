@@ -1,12 +1,11 @@
 /**
  * ==============================================================================
- * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V17.0)
+ * 🖥️ CORE SYSTEM : LES REJETÉS - TITAN EDITION (V18.0)
  * ==============================================================================
  * MODIFICATIONS : 
- * 1. SUPPRESSION DES CALCULS AUTO : Toutes les saisies sont en $ direct.
- * 2. TOTAL ARGENT : Somme simple de Brique + Pochon + Speedo (en $).
- * 3. Accès restreint : COMPTABILITÉ & HAUT GRADÉ.
- * 4. Sessions partagées par SALON.
+ * 1. TOTAL ARGENT : Somme de TOUTES les catégories (Sale + Brique + Pochon + Speedo + Recel).
+ * 2. AUCUN CALCUL AUTO : Saisie manuelle en $ pour chaque bouton.
+ * 3. Accès : COMPTABILITÉ & HAUT GRADÉ.
  * ==============================================================================
  */
 
@@ -57,7 +56,7 @@ process.on('unhandledRejection', (reason) => console.error(' [!] REJET :', reaso
 process.on('uncaughtException', (err) => console.error(' [!] EXCEPTION :', err));
 
 client.once(Events.ClientReady, () => {
-    console.log(`>>> Bot V17 Connecté : ${client.user.tag}`);
+    console.log(`>>> Bot V18 Connecté : ${client.user.tag}`);
     client.user.setActivity('Compta Les Rejetés', { type: ActivityType.Watching });
 });
 
@@ -141,15 +140,15 @@ function getRows() {
 }
 
 function buildFarmEmbed(user, data) {
-    // Le total est simplement la somme des valeurs déjà saisies en $
-    const totalCash = data.brique + data.pochon + data.speedo;
+    // TOTAL COMPLET : Somme de toutes les entrées dollar par dollar
+    const totalCash = data.sale + data.brique + data.pochon + data.speedo + data.recel;
     
     const lines = [
         `💰 **Argent Sale :** \`${data.sale.toLocaleString()}$\``,
         `📦 **Briques ($) :** \`${data.brique.toLocaleString()}$\``,
         `🌿 **Pochons ($) :** \`${data.pochon.toLocaleString()}$\``,
         `🧪 **Speedo ($) :** \`${data.speedo.toLocaleString()}$\``,
-        `🔌 **Recel :** \`${data.recel.toLocaleString()}$\``,
+        `🔌 **Recel ($) :** \`${data.recel.toLocaleString()}$\``,
         `💵 **TOTAL ARGENT :** \`${totalCash.toLocaleString()}$\``
     ];
 
